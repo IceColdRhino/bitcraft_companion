@@ -11,6 +11,7 @@ from .crafting_processor import CraftingProcessor
 from .tasks_processor import TasksProcessor
 from .claims_processor import ClaimsProcessor
 from .active_crafting_processor import ActiveCraftingProcessor
+from .compare_jobs_processor import CompareJobsProcessor
 
 __all__ = [
     "BaseProcessor",
@@ -19,4 +20,5 @@ __all__ = [
     "TasksProcessor",
     "ClaimsProcessor",
     "ActiveCraftingProcessor",
+    "CompareJobsProcessor",
 ]

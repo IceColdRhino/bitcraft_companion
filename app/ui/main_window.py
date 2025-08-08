@@ -15,6 +15,7 @@ from app.ui.tabs.claim_inventory_tab import ClaimInventoryTab
 from app.ui.tabs.passive_crafting_tab import PassiveCraftingTab
 from app.ui.tabs.traveler_tasks_tab import TravelerTasksTab
 from app.ui.tabs.active_crafting_tab import ActiveCraftingTab
+from app.ui.tabs.compare_jobs_tab import CompareJobsTab
 
 
 class ShutdownDialog(ctk.CTkToplevel):
@@ -344,6 +345,7 @@ class MainWindow(ctk.CTk):
             "Passive Crafting": PassiveCraftingTab,
             "Active Crafting": ActiveCraftingTab,
             "Traveler's Tasks": TravelerTasksTab,
+            "Compare Jobs": CompareJobsTab,
         }
 
         for name, TabClass in tab_classes.items():
@@ -673,6 +675,9 @@ class MainWindow(ctk.CTk):
             if "Traveler's Tasks" in self.tabs:
                 self.tabs["Traveler's Tasks"].update_data([])
 
+            if "Compare Jobs" in self.tabs:
+                self.tabs["Compare Jobs"].update_data([])
+
         except Exception as e:
             logging.error(f"Error clearing tab data: {e}")
 
@@ -855,6 +860,19 @@ class MainWindow(ctk.CTk):
                     else:
                         logging.warning("MAIN WINDOW: Traveler's Tasks tab not found for tasks_update")
 
+                elif msg_type == "compare_jobs_update":
+                    if "Compare Jobs" in self.tabs:
+                        start_time = time.time()
+                        self.tabs["Compare Jobs"].update_data(msg_data)
+                        update_time = time.time() - start_time
+                        logging.debug(f"Compare jobs tab update took {update_time:.3f}s")
+
+                        # Track that we've received active crafting data
+                        if self.is_loading:
+                            self.received_data_types.add("compare jobs")
+                            logging.debug(f"Received compare jobs data - progress: {self.received_data_types}")
+                            self._check_all_data_loaded()
+                
                 elif msg_type == "claim_info_update":
                     self.claim_info.update_claim_data(msg_data)
 

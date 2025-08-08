@@ -10,7 +10,7 @@ import queue
 import time
 import logging
 from .message_router import MessageRouter
-from .processors import InventoryProcessor, CraftingProcessor, TasksProcessor, ClaimsProcessor, ActiveCraftingProcessor
+from .processors import InventoryProcessor, CraftingProcessor, TasksProcessor, ClaimsProcessor, ActiveCraftingProcessor, CompareJobsProcessor
 from ..services.notification_service import NotificationService
 
 
@@ -32,6 +32,7 @@ class DataService:
         from ..services.passive_crafting_service import PassiveCraftingService
         from ..services.traveler_tasks_service import TravelerTasksService
         from ..services.active_crafting_service import ActiveCraftingService
+        from ..services.compare_jobs_service import CompareJobsService
 
         self.BitCraftClass = BitCraft
         self.PlayerClass = Player
@@ -40,6 +41,7 @@ class DataService:
         self.PassiveCraftingServiceClass = PassiveCraftingService
         self.TravelerTasksServiceClass = TravelerTasksService
         self.ActiveCraftingServiceClass = ActiveCraftingService
+        self.CompareJobsServiceClass = CompareJobsService
 
         # Instantiate the client immediately to load saved user data
         self.client = self.BitCraftClass()
@@ -50,6 +52,7 @@ class DataService:
         self.passive_crafting_service = None
         self.traveler_tasks_service = None
         self.active_crafting_service = None
+        self.compare_jobs_service = None
         self.claim_manager = None
         self.current_subscriptions = []
 
@@ -245,6 +248,7 @@ class DataService:
             from ..services.passive_crafting_service import PassiveCraftingService
             from ..services.traveler_tasks_service import TravelerTasksService
             from ..services.active_crafting_service import ActiveCraftingService
+            from ..services.compare_jobs_service import CompareJobsService
 
             inventory_service = InventoryService(bitcraft_client=self.client, claim_instance=self.claim)
             passive_crafting_service = PassiveCraftingService(
@@ -262,12 +266,18 @@ class DataService:
                 claim_instance=self.claim,
                 reference_data=reference_data,
             )
+            compare_jobs_service = CompareJobsService(
+                bitcraft_client=self.client,
+                claim_instance=self.claim,
+                reference_data=reference_data,
+            )
 
             # Store service references for cleanup
             self.inventory_service = inventory_service
             self.passive_crafting_service = passive_crafting_service
             self.traveler_tasks_service = traveler_tasks_service
             self.active_crafting_service = active_crafting_service
+            self.compare_jobs_service = compare_jobs_service
 
             # Initialize processors and message router (subscription-based architecture only)
             services = {
@@ -278,6 +288,7 @@ class DataService:
                 "passive_crafting_service": passive_crafting_service,
                 "traveler_tasks_service": traveler_tasks_service,
                 "active_crafting_service": active_crafting_service,
+                "compare_jobs_service": compare_jobs_service,
                 "data_service": self,
             }
 
@@ -287,6 +298,7 @@ class DataService:
                 TasksProcessor(self.data_queue, services, reference_data),
                 ClaimsProcessor(self.data_queue, services, reference_data),
                 ActiveCraftingProcessor(self.data_queue, services, reference_data),
+                CompareJobsProcessor(self.data_queue, services, reference_data),
             ]
 
             self.message_router = MessageRouter(self.processors, self.data_queue)

@@ -35,6 +35,7 @@ class BaseProcessor(ABC):
         self.passive_crafting_service = services.get("passive_crafting_service")
         self.traveler_tasks_service = services.get("traveler_tasks_service")
         self.active_crafting_service = services.get("active_crafting_service")
+        self.compare_jobs_service = services.get("compare_jobs_service")
         self.claim_manager = services.get("claim_manager")
 
     @abstractmethod
