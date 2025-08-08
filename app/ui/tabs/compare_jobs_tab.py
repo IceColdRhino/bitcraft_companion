@@ -12,8 +12,8 @@ class CompareJobsTab(ctk.CTkFrame):
         super().__init__(master, fg_color="transparent")
         self.app = app
 
-        # Updated headers to include Accept Help column
-        self.headers = ["Item", "Tier", "Quantity", "Tag", "Remaining Effort", "Accept Help", "Crafter", "Building"]
+        self.headers = ["Item",
+                        "Job"]
         self.all_data: List[Dict] = []
         self.filtered_data: List[Dict] = []
 
@@ -123,13 +123,7 @@ class CompareJobsTab(ctk.CTkFrame):
         # Set up headings and column widths
         column_widths = {
             "Item": 180,
-            "Tier": 50,
-            "Quantity": 70,
-            "Tag": 70,
-            "Remaining Effort": 120,
-            "Accept Help": 90,
-            "Crafter": 90,
-            "Building": 200,
+            "Job":100,
         }
 
         for header in self.headers:
@@ -195,7 +189,7 @@ class CompareJobsTab(ctk.CTkFrame):
             return
 
         # Handle special cases for filters
-        if header.lower() in ["building", "crafter", "accept help"]:
+        if header.lower() in ["building", "crafter"]:
             unique_values = self._get_filter_data_for_expandable_column(header)
             filter_data = [{f"{header.lower().replace(' ', '_')}_display": val} for val in unique_values]
             current_selection = self.active_filters.get(header, set(unique_values))
@@ -236,11 +230,6 @@ class CompareJobsTab(ctk.CTkFrame):
                     crafter = operation.get("crafter", "")
                     if crafter:
                         unique_values.add(crafter)
-                elif header.lower() == "accept help":
-                    # For accept help, just the accept help value
-                    accept_help = operation.get("accept_help", "")
-                    if accept_help:
-                        unique_values.add(accept_help)
 
         return sorted(list(unique_values))
 
@@ -259,10 +248,6 @@ class CompareJobsTab(ctk.CTkFrame):
             # Flatten hierarchical data into individual operations
             self.all_data = self._flatten_active_crafting_data(new_data)
 
-            accept_help_values = set()
-            for operation in self.all_data:
-                accept_help = operation.get("accept_help", "Unknown")
-                accept_help_values.add(accept_help)
         else:
             self.all_data = []
 
@@ -289,13 +274,7 @@ class CompareJobsTab(ctk.CTkFrame):
                     flattened.append(
                         {
                             "item": item_group.get("item", "Unknown Item"),
-                            "tier": item_group.get("tier", 0),
-                            "quantity": item_group.get("total_quantity", 0),
-                            "tag": item_group.get("tag", "empty"),
-                            "remaining_effort": item_group.get("remaining_effort", "Unknown"),
-                            "accept_help": item_group.get("accept_help", "Unknown"),
-                            "crafter": item_group.get("crafter", "Unknown"),
-                            "building": item_group.get("building_name", "Unknown"),
+                            "job":item_group.get("job_name","Unknown")
                         }
                     )
                 else:
@@ -304,13 +283,7 @@ class CompareJobsTab(ctk.CTkFrame):
                         flattened.append(
                             {
                                 "item": operation.get("item", operation.get("item_name", item_group.get("item", "Unknown Item"))),
-                                "tier": operation.get("tier", item_group.get("tier", 0)),
-                                "quantity": operation.get("quantity", operation.get("craft_count", 1)),
-                                "tag": operation.get("tag", item_group.get("tag", "empty")),
-                                "remaining_effort": operation.get("remaining_effort", "Unknown"),
-                                "accept_help": operation.get("accept_help", "Unknown"),
-                                "crafter": operation.get("crafter", "Unknown"),
-                                "building": operation.get("building_name", operation.get("building", "Unknown")),
+                                "job":operation.get("job_name",operation.get("job", "Unknown")),
                             }
                         )
 
@@ -326,7 +299,7 @@ class CompareJobsTab(ctk.CTkFrame):
 
         if self.active_filters:
             for header, values in self.active_filters.items():
-                if header.lower() in ["building", "crafter", "accept help"]:
+                if header.lower() in ["building", "crafter"]:
                     temp_data = [row for row in temp_data if self._expandable_column_matches_filter(row, header, values)]
                 else:
                     field_name = header.lower().replace(" ", "_")
@@ -361,18 +334,14 @@ class CompareJobsTab(ctk.CTkFrame):
                 crafter = operation.get("crafter", "")
                 if crafter in selected_values:
                     return True
-            elif header.lower() == "accept help":
-                # For accept help, check accept help value
-                accept_help = operation.get("accept_help", "")
-                if accept_help in selected_values:
-                    return True
 
         return False
 
     def _row_matches_search(self, operation_data, search_term):
         """Check if individual operation data matches the search term."""
         # Check main fields in the flattened operation data
-        searchable_fields = ["item", "tag", "remaining_effort", "accept_help", "crafter", "building"]
+        searchable_fields = ["item",
+                             "job"]
         for field in searchable_fields:
             if search_term in str(operation_data.get(field, "")).lower():
                 return True
@@ -460,22 +429,18 @@ class CompareJobsTab(ctk.CTkFrame):
         for operation_data in self.filtered_data:
             # Extract data for each individual operation
             item_name = operation_data.get("item", "Unknown Item")
-            tier = operation_data.get("tier", 0)
-            quantity = operation_data.get("quantity", 0)
-            tag = operation_data.get("tag", "empty")
-            remaining_effort = operation_data.get("remaining_effort", "Unknown")
-            accept_help = operation_data.get("accept_help", "Unknown")
-            crafter = operation_data.get("crafter", "Unknown")
-            building = operation_data.get("building", "Unknown")
+            job = operation_data.get("job","Unknown")
 
             # Prepare row values
-            values = [item_name, str(tier), str(quantity), tag, remaining_effort, accept_help, crafter, building]
+            values = [item_name,
+                      job]
 
             # Determine tag based on progress for styling
-            progress_tag = self._get_progress_tag(remaining_effort)
+            # I would like this to instead be based on profit per second
+            #progress_tag = self._get_progress_tag(remaining_effort)
 
             # Insert as a simple flat row
-            self.tree.insert("", "end", values=values, tags=(progress_tag,))
+            self.tree.insert("", "end", values=values)#, tags=(progress_tag,))
 
     def _get_progress_tag(self, progress):
         """Determines the appropriate tag for color coding based on progress."""

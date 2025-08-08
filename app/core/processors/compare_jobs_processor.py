@@ -405,13 +405,13 @@ class CompareJobsProcessor(BaseProcessor):
                 self._building_nicknames = {}
 
             # Consolidate compare jobs by item
-            consolidated_crafting = self._consolidate_compare_jobs()
+            consolidated_jobs = self._consolidate_compare_jobs()
 
             # Convert dictionary to list format for UI
-            crafting_list = self._format_crafting_for_ui(consolidated_crafting)
+            jobs_list = self._format_jobs_for_ui(consolidated_jobs)
 
             # Send to UI
-            self._queue_update("compare_jobs_update", crafting_list)
+            self._queue_update("compare_jobs_update", jobs_list)
 
         except Exception as e:
             logging.error(f"Error sending compare jobs update: {e}")
@@ -556,24 +556,12 @@ class CompareJobsProcessor(BaseProcessor):
                         # Create raw operation
                         raw_operation = {
                             "item_name": item_name,
-                            "tier": item_tier,
-                            "quantity": total_quantity,
-                            "tag": item_tag,
-                            "crafter": crafter_name,
-                            "building_name": container_name,
-                            "remaining_effort": status_display,
-                            "progress_value": f"{current_effort}/{total_effort}",
-                            "accept_help": accepts_help,
-                            "action_id": action_id,
-                            "recipe_name": recipe_name,
-                            "preparation": preparation,
-                            "current_progress": current_effort,
-                            "total_progress": total_effort,
+                            "job_name": "Filler",
                         }
                         raw_operations.append(raw_operation)
 
                 except Exception as e:
-                    logging.error(f"[ACTIVE_CRAFT_DEBUG] Exception processing action {action_id} crafted items: {e}")
+                    logging.error(f"[COMPARE_JOB_DEBUG] Exception processing action {action_id} job: {e}")
                     continue
 
             # Now build the 3-level hierarchy
@@ -585,7 +573,7 @@ class CompareJobsProcessor(BaseProcessor):
 
     def _build_hierarchy(self, raw_operations):
         """
-        Build 3-level hierarchy from raw operations: Item -> Crafter -> Building/Progress.
+        Build 1-level hierarchy from raw operations: Job -> ...?
 
         Args:
             raw_operations: List of individual compare jobs operations
@@ -593,6 +581,7 @@ class CompareJobsProcessor(BaseProcessor):
         Returns:
             Dictionary with hierarchical structure for UI
         """
+        logging.info(f"raw_operation: {raw_operations[0]}")
         try:
             hierarchy = {}
 
@@ -602,53 +591,11 @@ class CompareJobsProcessor(BaseProcessor):
 
                 if item_name not in hierarchy:
                     hierarchy[item_name] = {
-                        "tier": op["tier"],
-                        "tag": op["tag"],
-                        "total_quantity": 0,
-                        "crafters": {},  # Level 2: crafter data
-                        "unique_crafters": set(),
-                        "unique_buildings": set(),
-                        "accept_help_values": set(),  # Track all accept help values
+                        "job_name": op["job_name"]
                     }
-
-                # Add to item totals
-                hierarchy[item_name]["total_quantity"] += op["quantity"]
-                hierarchy[item_name]["unique_crafters"].add(op["crafter"])
-                hierarchy[item_name]["unique_buildings"].add(op["building_name"])
-                hierarchy[item_name]["accept_help_values"].add(op["accept_help"])
-
-                # Group by crafter (Level 2)
-                crafter = op["crafter"]
-                if crafter not in hierarchy[item_name]["crafters"]:
-                    hierarchy[item_name]["crafters"][crafter] = {
-                        "total_quantity": 0,
-                        "buildings": {},  # Level 3: building/progress data
-                        "unique_buildings": set(),
-                        "accept_help_values": set(),  # Track accept help values for this crafter
-                    }
-
-                # Add to crafter totals
-                hierarchy[item_name]["crafters"][crafter]["total_quantity"] += op["quantity"]
-                hierarchy[item_name]["crafters"][crafter]["unique_buildings"].add(op["building_name"])
-                hierarchy[item_name]["crafters"][crafter]["accept_help_values"].add(op["accept_help"])
-
-                # Group by building + progress (Level 3)
-                building_progress_key = f"{op['building_name']}|{op['remaining_effort']}"
-                if building_progress_key not in hierarchy[item_name]["crafters"][crafter]["buildings"]:
-                    hierarchy[item_name]["crafters"][crafter]["buildings"][building_progress_key] = {
-                        "building_name": op["building_name"],
-                        "remaining_effort": op["remaining_effort"],
-                        "progress_value": op["progress_value"],
-                        "accept_help": op["accept_help"],
-                        "quantity": 0,
-                        "operations": [],
-                    }
-
-                # Add to building/progress group
-                hierarchy[item_name]["crafters"][crafter]["buildings"][building_progress_key]["quantity"] += op["quantity"]
-                hierarchy[item_name]["crafters"][crafter]["buildings"][building_progress_key]["operations"].append(op)
 
             # Convert to UI format
+            logging.info(f"hierarchy: {hierarchy}")
             return self._format_hierarchy_for_ui(hierarchy)
 
         except Exception as e:
@@ -678,7 +625,7 @@ class CompareJobsProcessor(BaseProcessor):
         Format hierarchical data for UI consumption - simplified for flat display.
 
         Args:
-            hierarchy: The 3-level hierarchy structure
+            hierarchy: The 1-level hierarchy structure
 
         Returns:
             Dictionary formatted for UI display
@@ -687,41 +634,10 @@ class CompareJobsProcessor(BaseProcessor):
             formatted = {}
 
             for item_name, item_data in hierarchy.items():
-                # Since we're using flat rows now, just create individual operation entries
-                operations = []
-
-                for crafter_name, crafter_data in item_data["crafters"].items():
-                    for building_progress_key, building_data in crafter_data["buildings"].items():
-                        # Each building/progress combination becomes its own operation
-                        for operation in building_data["operations"]:
-                            operations.append(
-                                {
-                                    "item": operation["item_name"],
-                                    "tier": operation["tier"],
-                                    "quantity": operation["quantity"],
-                                    "tag": operation["tag"],
-                                    "remaining_effort": operation["remaining_effort"],
-                                    "accept_help": operation["accept_help"],
-                                    "crafter": operation["crafter"],
-                                    "building_name": operation["building_name"],
-                                    "is_expandable": False,
-                                    "expansion_level": 0,
-                                }
-                            )
-
                 # Create a simple entry that contains all the individual operations
                 formatted[item_name] = {
                     "item": item_name,
-                    "tier": item_data["tier"],
-                    "total_quantity": item_data["total_quantity"],
-                    "tag": item_data["tag"],
-                    "remaining_effort": "Multiple",  # Not used in flat display
-                    "accept_help": "Mixed",  # Not used in flat display
-                    "crafter": "Multiple",  # Not used in flat display
-                    "building_name": "Multiple",  # Not used in flat display
-                    "operations": operations,
-                    "is_expandable": True,  # Always expandable to show individual operations
-                    "expansion_level": 0,
+                    "job": item_data["job_name"]
                 }
 
             return formatted
@@ -826,12 +742,12 @@ class CompareJobsProcessor(BaseProcessor):
             logging.error(f"Error determining preferred source: {e}")
             return None
 
-    def _format_crafting_for_ui(self, consolidated_crafting):
+    def _format_jobs_for_ui(self, consolidated_jobs):
         """
         Convert consolidated crafting dictionary to list format expected by UI.
 
         Args:
-            consolidated_crafting: Dictionary with items consolidated by name
+            consolidated_jobs: Dictionary with jobs consolidated by name
 
         Returns:
             List of item groups with operations for expandable UI
@@ -839,9 +755,9 @@ class CompareJobsProcessor(BaseProcessor):
         try:
             formatted_list = []
 
-            for item_name, item_data in consolidated_crafting.items():
+            for job_name, job_data in consolidated_jobs.items():
                 # Keep all the properly formatted data from _format_hierarchy_for_ui
-                formatted_list.append(item_data)
+                formatted_list.append(job_data)
 
             # Sort by item name for consistent display
             formatted_list.sort(key=lambda x: x.get("item", "").lower())
@@ -849,7 +765,7 @@ class CompareJobsProcessor(BaseProcessor):
             return formatted_list
 
         except Exception as e:
-            logging.error(f"Error formatting crafting for UI: {e}")
+            logging.error(f"Error formatting jobs for UI: {e}")
             return []
 
     def _get_player_name(self, player_entity_id):
@@ -990,16 +906,16 @@ class CompareJobsProcessor(BaseProcessor):
         """
         try:
             # Get fresh compare jobs data using existing consolidation logic
-            consolidated_crafting = self._consolidate_compare_jobs()
+            consolidated_jobs = self._consolidate_compare_jobs()
 
             # Convert dictionary to list format for UI (same as regular update)
-            crafting_list = self._format_crafting_for_ui(consolidated_crafting)
+            jobs_list = self._format_jobs_for_ui(consolidated_jobs)
 
-            if crafting_list:
+            if jobs_list:
                 # Send targeted update with incremental flag
                 self._queue_update(
                     "compare_jobs_update",
-                    crafting_list,
+                    jobs_list,
                     changes={"type": "incremental", "source": "live_transaction", "reducer": reducer_name},
                     timestamp=timestamp,
                 )
