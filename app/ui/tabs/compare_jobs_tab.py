@@ -3,6 +3,7 @@ import logging
 from tkinter import Menu, ttk
 from typing import List, Dict
 from app.ui.components.filter_popup import FilterPopup
+from app.ui.components.job_popup import JobPopup
 
 
 class CompareJobsTab(ctk.CTkFrame):
@@ -12,18 +13,21 @@ class CompareJobsTab(ctk.CTkFrame):
         super().__init__(master, fg_color="transparent")
         self.app = app
 
-        self.headers = ["Item",
-                        "Job"]
+        self.headers = ["Job",
+                        "Time",
+                        "Stamina",
+                        "Effort"]
         self.all_data: List[Dict] = []
         self.filtered_data: List[Dict] = []
 
-        self.sort_column = "Item"
+        self.sort_column = "Job"
         self.sort_reverse = False
         self.active_filters: Dict[str, set] = {}
         self.clicked_header = None
 
         self._create_widgets()
         self._create_context_menu()
+        self._create_job_context_menu()
 
     def _create_widgets(self):
         """Creates the styled Treeview and its scrollbars."""
@@ -122,8 +126,10 @@ class CompareJobsTab(ctk.CTkFrame):
 
         # Set up headings and column widths
         column_widths = {
-            "Item": 180,
-            "Job":100,
+            "Job": 100,
+            "Time": 100,
+            "Stamina": 100,
+            "Effort": 100,
         }
 
         for header in self.headers:
@@ -139,7 +145,7 @@ class CompareJobsTab(ctk.CTkFrame):
         self.cached_total_width = None
 
         # Bind events
-        self.tree.bind("<Button-3>", self.show_header_context_menu)
+        self.tree.bind("<Button-3>", self.show_context_menu)
         self.tree.bind("<Configure>", self.on_tree_configure)
 
     def on_tree_configure(self, event):
@@ -170,19 +176,37 @@ class CompareJobsTab(ctk.CTkFrame):
         finally:
             self.resize_timer = None
 
+    def _create_job_context_menu(self):
+        """Creates the right-click menu for individual jobs."""
+        self.job_context_menu = Menu(self, tearoff=0, background="#2a2d2e", foreground="white", activebackground="#1f6aa5")
+        self.job_context_menu.add_command(label="See Job Details", command=lambda: self._open_job_popup(self.clicked_row))
+
     def _create_context_menu(self):
         """Creates the right-click menu for column headers."""
         self.header_context_menu = Menu(self, tearoff=0, background="#2a2d2e", foreground="white", activebackground="#1f6aa5")
         self.header_context_menu.add_command(label="Filter by...", command=lambda: self._open_filter_popup(self.clicked_header))
         self.header_context_menu.add_command(label="Clear Filter", command=lambda: self.clear_column_filter(self.clicked_header))
 
-    def show_header_context_menu(self, event):
+    def show_context_menu(self, event):
         """Identifies the clicked header and displays the context menu."""
         region = self.tree.identify("region", event.x, event.y)
         if region == "heading":
             column_id = self.tree.identify_column(event.x)
             self.clicked_header = self.tree.column(column_id, "id")
             self.header_context_menu.tk_popup(event.x_root, event.y_root)
+        elif region == "cell":
+            row_id = self.tree.identify('item', event.x, event.y)
+            self.clicked_row = self.tree.item(row_id)
+            self.job_context_menu.tk_popup(event.x_root, event.y_root)
+
+    def _open_job_popup(self, cell):
+        job_id = cell["tags"][0]
+        job_data = next(filter(lambda x: x["job_id"] == job_id, self.all_data), None)
+        JobPopup(
+            self,
+            cell,
+            job_data,
+        )
 
     def _open_filter_popup(self, header):
         if not self.all_data:
@@ -243,19 +267,19 @@ class CompareJobsTab(ctk.CTkFrame):
             self.apply_filter()
 
     def update_data(self, new_data):
-        """Receives new active crafting data and flattens it into individual operations."""
+        """Receives new compare jobs data and flattens it into individual operations."""
         if isinstance(new_data, list):
             # Flatten hierarchical data into individual operations
-            self.all_data = self._flatten_active_crafting_data(new_data)
+            self.all_data = self._flatten_compare_jobs_data(new_data)
 
         else:
             self.all_data = []
 
         self.apply_filter()
 
-    def _flatten_active_crafting_data(self, hierarchical_data):
+    def _flatten_compare_jobs_data(self, hierarchical_data):
         """
-        Converts hierarchical active crafting data into flat list of individual operations.
+        Converts hierarchical compare jobs data into flat list of individual operations.
 
         Args:
             hierarchical_data: List of item groups with nested operations
@@ -273,8 +297,20 @@ class CompareJobsTab(ctk.CTkFrame):
                 if not operations:
                     flattened.append(
                         {
-                            "item": item_group.get("item", "Unknown Item"),
-                            "job":item_group.get("job_name","Unknown")
+                            "job_id":item_group.get("job_id","Unknown"),
+                            "job":item_group.get("job","Unknown"),
+                            "time":item_group.get("time","Unknown"),
+                            "stamina":item_group.get("stamina","Unknown"),
+                            "durability_cost":item_group.get("durability_cost","Unknown"),
+                            "building":item_group.get("building","Unknown"),
+                            "skill":item_group.get("skill","Unknown"),
+                            "tool":item_group.get("tool","Unknown"),
+                            "inputs":item_group.get("inputs","Unknown"),
+                            "xp":item_group.get("xp","Unknown"),
+                            "outputs":item_group.get("outputs","Unknown"),
+                            "effort":item_group.get("effort","Unknown"),
+                            "use_hands": item_group.get("use_hands","Unknown"),
+                            "is_passive": item_group.get("is_passive","Unknown"),
                         }
                     )
                 else:
@@ -282,8 +318,20 @@ class CompareJobsTab(ctk.CTkFrame):
                     for operation in operations:
                         flattened.append(
                             {
-                                "item": operation.get("item", operation.get("item_name", item_group.get("item", "Unknown Item"))),
-                                "job":operation.get("job_name",operation.get("job", "Unknown")),
+                                "job_id":operation.get("job_id",operation.get("job_id", "Unknown")),
+                                "job":operation.get("job",operation.get("job", "Unknown")),
+                                "time":operation.get("time",operation.get("time", "Unknown")),
+                                "stamina":operation.get("stamina",operation.get("stamina", "Unknown")),
+                                "durability_cost": operation.get("durability_cost",operation.get("durability_cost","Unknown")),
+                                "building": operation.get("building",operation.get("building","Unknown")),
+                                "skill": operation.get(operation.get("skill","Unknown")),
+                                "tool": operation.get(operation.get("tool","Unknown")),
+                                "inputs": operations.get("inputs",operation.get("inputs","Unknown")),
+                                "xp": operations.get("xp",operation.get("xp","Unknown")),
+                                "outputs": operations.get("outputs",operation.get("outputs","Unknown")),
+                                "effort":operation.get("effort",operation.get("effort", "Unknown")),
+                                "use_hands": operation.get("use_hands",operation.get("use_hands","Unknown")),
+                                "is_passive": operation.get("is_passive",operation.get("is_passive","Unknown")),
                             }
                         )
 
@@ -340,8 +388,8 @@ class CompareJobsTab(ctk.CTkFrame):
     def _row_matches_search(self, operation_data, search_term):
         """Check if individual operation data matches the search term."""
         # Check main fields in the flattened operation data
-        searchable_fields = ["item",
-                             "job"]
+        searchable_fields = ["job",
+                             ]
         for field in searchable_fields:
             if search_term in str(operation_data.get(field, "")).lower():
                 return True
@@ -428,19 +476,46 @@ class CompareJobsTab(ctk.CTkFrame):
 
         for operation_data in self.filtered_data:
             # Extract data for each individual operation
-            item_name = operation_data.get("item", "Unknown Item")
+            id = operation_data.get("job_id","Unknown")
             job = operation_data.get("job","Unknown")
+            time = operation_data.get("time","Unknown")
+            stamina = operation_data.get("stamina","Unknown")
+            durability = operation_data.get("durability_cost","Unknown")
+            building = operation_data.get("building","Unknown")
+            level = operation_data.get("skill","Unknown")
+            tool = operation_data.get("tool","Unknown")
+            inputs = operation_data.get("inputs","Unknown")
+            xp = operation_data.get("xp","Unknown")
+            outputs = operation_data.get("outputs","Unknown")
+            effort = operation_data.get("effort","Unknown")
+            hands = operation_data.get("use_hands","Unknown")
+            passive = operation_data.get("is_passive","Unknown")
 
             # Prepare row values
-            values = [item_name,
-                      job]
+            values = [job,
+                      time,
+                      stamina,
+                      effort,
+                      # Above the comment will be displayed in header-order in table
+                      # Below the comment will be hidden until popup
+                      durability,
+                      building,
+                      level,
+                      tool,
+                      inputs,
+                      xp,
+                      outputs,
+                      hands,
+                      passive]
 
-            # Determine tag based on progress for styling
-            # I would like this to instead be based on profit per second
-            #progress_tag = self._get_progress_tag(remaining_effort)
+            # Give tag to item id
+            id_tag = id
+
+            # Determine tag based on profitability for styling
+            profit_tag = "Profitable"
 
             # Insert as a simple flat row
-            self.tree.insert("", "end", values=values)#, tags=(progress_tag,))
+            self.tree.insert("", "end", values=values, tags=(id_tag,profit_tag))
 
     def _get_progress_tag(self, progress):
         """Determines the appropriate tag for color coding based on progress."""
