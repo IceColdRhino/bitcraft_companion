@@ -160,6 +160,21 @@ class QueryService:
                 "JOIN building_state ON passive_craft_state.building_entity_id = building_state.entity_id "
                 "WHERE building_state.claim_entity_id = '{claim_id}';".format(claim_id=claim_id)
             ),
+            (
+                "SELECT sell_order_state.* "
+                "FROM sell_order_state "
+                "WHERE sell_order_state.claim_entity_id = '{claim_id}';".format(claim_id=claim_id)
+            ),
+            (
+                "SELECT character_stats_state.* "
+                "FROM character_stats_state "
+                "WHERE character_stats_state.entity_id = '{user_id}';".format(user_id=user_id)
+            ),
+            (
+                "SELECT equipment_state.* "
+                "FROM equipment_state "
+                "WHERE equipment_state.entity_id = '{user_id}';".format(user_id=user_id)
+            ),
         ]
 
         return queries

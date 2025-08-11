@@ -21,10 +21,10 @@ class CompareJobsProcessor(BaseProcessor):
         """Return list of table names this processor handles."""
         return [
             "progressive_action_state",
-            "public_progressive_action_state",
             "building_state",
-            "building_nickname_state",
-            "claim_member_state",
+            "sell_order_state",
+            "character_stats_state",
+            "equipment_state",
         ]
 
     def process_transaction(self, table_update, reducer_name, timestamp):
@@ -44,8 +44,6 @@ class CompareJobsProcessor(BaseProcessor):
                 inserts = update.get("inserts", [])
                 deletes = update.get("deletes", [])
 
-                        parsed_data = self._parse_progressive_action_state(insert_str)
-                        if parsed_data:
         except Exception as e:
             logging.error(f"Error handling compare jobs transaction: {e}")
 
@@ -73,14 +71,26 @@ class CompareJobsProcessor(BaseProcessor):
             # Handle different table types
             if table_name == "progressive_action_state":
                 self._process_progressive_action_data(table_rows)
-            elif table_name == "public_progressive_action_state":
-                self._process_public_progressive_action_data(table_rows)
             elif table_name == "building_state":
                 self._process_building_data(table_rows)
-            elif table_name == "building_nickname_state":
-                self._process_building_nickname_data(table_rows)
-            elif table_name == "claim_member_state":
-                self._process_claim_member_data(table_rows)
+            elif table_name == "sell_order_state":
+                # TODO
+                #logging.info(f"TEMP - Sell Order State: {table_update}")
+                ...
+            elif table_name == "character_stats_state":
+                # TODO
+                # Look up Character State Type bindings to find meaning of "Values" field
+                # Generally, there's good Speed info here but not good Power info
+                logging.info(f"TEMP - Character Stats State: {table_update}")
+                ...
+            elif table_name == "equipment_state":
+                # TODO:
+                # Equipment state seems to just be for armor
+                # For my needs, worsely redundant with character_states_state
+                #logging.info(f"TEMP - Equipment State: {table_update}")
+                ...
+            # Seems that inventory_state is what I really need? Now, how to go about accessing that without
+            # breaking pre-existing stuff?
 
             # Try to send consolidated compare jobs if we have all necessary data
             self._send_compare_jobs_update()
@@ -130,27 +140,6 @@ class CompareJobsProcessor(BaseProcessor):
         except Exception as e:
             logging.error(f"Error processing progressive action data: {e}")
 
-    def _process_public_progressive_action_data(self, public_action_rows):
-        """Process public_progressive_action_state data to track which buildings accept help."""
-        try:
-            # Initialize and clear the public actions set for fresh subscription data
-            if not hasattr(self, "_public_actions"):
-                self._public_actions = set()
-            else:
-                # Clear existing data since subscription updates contain the full current state
-                self._public_actions.clear()
-
-            all_public_building_ids = []
-
-            # Add all buildings that currently accept help
-            for row in public_action_rows:
-                building_entity_id = row.get("building_entity_id")
-                if building_entity_id:
-                    self._public_actions.add(building_entity_id)
-                    all_public_building_ids.append(building_entity_id)
-
-        except Exception as e:
-            logging.error(f"Error processing public progressive action data: {e}")
 
     def _process_building_data(self, building_rows):
         """Process building_state data to store building info."""
@@ -170,41 +159,6 @@ class CompareJobsProcessor(BaseProcessor):
 
         except Exception as e:
             logging.error(f"Error processing building data: {e}")
-
-    def _process_building_nickname_data(self, nickname_rows):
-        """Process building_nickname_state data to store custom building names."""
-        try:
-            # Store nickname data keyed by entity_id
-            if not hasattr(self, "_building_nicknames"):
-                self._building_nicknames = {}
-
-            for row in nickname_rows:
-                entity_id = row.get("entity_id")
-                nickname = row.get("nickname")
-                if entity_id and nickname:
-                    self._building_nicknames[entity_id] = nickname
-
-        except Exception as e:
-            logging.error(f"Error processing building nickname data: {e}")
-
-    def _process_claim_member_data(self, member_rows):
-        """Process claim_member_state data to store player names for current claim members."""
-        try:
-            # Store member data keyed by player_entity_id
-            if not hasattr(self, "_claim_members"):
-                self._claim_members = {}
-
-            for row in member_rows:
-                claim_entity_id = row.get("claim_entity_id")
-                player_entity_id = row.get("player_entity_id")
-                user_name = row.get("user_name")
-
-                # Store all claim member data since the query service already filters by current claim
-                if player_entity_id and user_name:
-                    self._claim_members[str(player_entity_id)] = user_name
-
-        except Exception as e:
-            logging.error(f"Error processing claim member data: {e}")
 
     def _send_compare_jobs_update(self):
         """Send consolidated compare jobs update by combining all cached data."""
@@ -531,16 +485,16 @@ class CompareJobsProcessor(BaseProcessor):
                 return False
 
             # Get owner name from entity ID using claim members data
-            if not hasattr(self, "_claim_members") or not self._claim_members:
-                return False
+            #if not hasattr(self, "_claim_members") or not self._claim_members:
+            #    return False
 
             owner_id_str = str(owner_entity_id)
-            owner_name = self._claim_members.get(owner_id_str)
-            if not owner_name:
-                return False
+            #owner_name = self._claim_members.get(owner_id_str)
+            #if not owner_name:
+            #    return False
 
             # Check if owner is the current player
-            return owner_name == current_player_name
+            #return owner_name == current_player_name
 
         except Exception as e:
             logging.error(f"Error checking if owner {owner_entity_id} is current player: {e}")
@@ -583,11 +537,11 @@ class CompareJobsProcessor(BaseProcessor):
         if hasattr(self, "_building_nicknames"):
             self._building_nicknames.clear()
 
-        if hasattr(self, "_claim_members"):
-            self._claim_members.clear()
+        #if hasattr(self, "_claim_members"):
+        #    self._claim_members.clear()
 
-        if hasattr(self, "_public_actions"):
-            self._public_actions.clear()
+        #if hasattr(self, "_public_actions"):
+        #    self._public_actions.clear()
 
     def _get_item_name_from_recipe(self, recipe_id: int) -> str:
         """Get the actual item name from a recipe ID by looking up crafted_item_stacks."""
