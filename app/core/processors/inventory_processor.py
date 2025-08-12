@@ -179,11 +179,12 @@ class InventoryProcessor(BaseProcessor):
             for row in inventory_rows:
                 owner_entity_id = row.get("owner_entity_id")
                 if owner_entity_id:
-                    if owner_entity_id not in self._inventory_data:
-                        self._inventory_data[owner_entity_id] = []
+                    if row.get("inventory_index") == 0:
+                        if owner_entity_id not in self._inventory_data:
+                            self._inventory_data[owner_entity_id] = []
 
-                    # Store the inventory record
-                    self._inventory_data[owner_entity_id].append(row)
+                        # Store the inventory record
+                        self._inventory_data[owner_entity_id].append(row)
 
             # for building_id, items in self._inventory_data.items():
 

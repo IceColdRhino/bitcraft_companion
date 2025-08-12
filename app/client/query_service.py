@@ -171,9 +171,10 @@ class QueryService:
                 "WHERE character_stats_state.entity_id = '{user_id}';".format(user_id=user_id)
             ),
             (
-                "SELECT equipment_state.* "
-                "FROM equipment_state "
-                "WHERE equipment_state.entity_id = '{user_id}';".format(user_id=user_id)
+                "SELECT inventory_state.* "
+                "FROM inventory_state "
+                "WHERE inventory_state.inventory_index = 1 "
+                "AND inventory_state.owner_entity_id = '{user_id}';".format(user_id=user_id)
             ),
         ]
 

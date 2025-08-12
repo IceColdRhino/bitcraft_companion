@@ -24,7 +24,7 @@ class CompareJobsProcessor(BaseProcessor):
             "building_state",
             "sell_order_state",
             "character_stats_state",
-            "equipment_state",
+            "inventory_state",
         ]
 
     def process_transaction(self, table_update, reducer_name, timestamp):
@@ -81,16 +81,12 @@ class CompareJobsProcessor(BaseProcessor):
                 # TODO
                 # Look up Character State Type bindings to find meaning of "Values" field
                 # Generally, there's good Speed info here but not good Power info
-                logging.info(f"TEMP - Character Stats State: {table_update}")
+                #logging.info(f"TEMP - Character Stats State: {table_update}")
                 ...
-            elif table_name == "equipment_state":
-                # TODO:
-                # Equipment state seems to just be for armor
-                # For my needs, worsely redundant with character_states_state
-                #logging.info(f"TEMP - Equipment State: {table_update}")
+            elif table_name == "inventory_state":
+                # TODO
+                #logging.info(f"TEMP - Inventory State: {table_update}")
                 ...
-            # Seems that inventory_state is what I really need? Now, how to go about accessing that without
-            # breaking pre-existing stuff?
 
             # Try to send consolidated compare jobs if we have all necessary data
             self._send_compare_jobs_update()
