@@ -179,7 +179,6 @@ class CompareJobsProcessor(BaseProcessor):
             raw_operations = []
 
             # Get reference data for lookups
-            item_lookups = self._get_item_lookups()
             recipe_lookup = {r["id"]: r for r in self.reference_data.get("crafting_recipe_desc", [])}
 
             # Add crafting recipe info to list of raw_operations
@@ -193,23 +192,41 @@ class CompareJobsProcessor(BaseProcessor):
                     input_name = "{1}"
                     try:
                         primary_in = recipe["consumed_item_stacks"][0]
+                        item_id = primary_in[0]
                     except:
                         continue
+
                     if primary_in[2][0] == 0:
-                        input_name = item_lookups[(primary_in[0],"item_desc")]["name"]
+                        item_info = self.item_lookup_service.lookup_item_by_id(
+                            item_id, "item_desc"
+                            )
                     elif primary_in[2][0] == 1:
-                        input_name = item_lookups[(primary_in[0],"cargo_desc")]["name"]
+                        item_info = self.item_lookup_service.lookup_item_by_id(
+                            item_id, "cargo_desc"
+                            )
+                    input_name = (
+                                item_info.get("name", f"Unknown Item {item_id}") if item_info else f"Unknown Item {item_id}"
+                            )
                     job_name = job_name.replace("{1}",input_name)
                 if "{0}" in job_name:
                     output_name = "{0}"
                     try:
                         primary_out = recipe["crafted_item_stacks"][0]
+                        item_id = primary_out[0]
                     except:
                         continue
+
                     if primary_out[2][0] == 0:
-                        output_name = item_lookups[(primary_out[0],"item_desc")]["name"]
+                        item_info = self.item_lookup_service.lookup_item_by_id(
+                            item_id, "item_desc"
+                            )
                     elif primary_out[2][0] == 1:
-                        output_name = item_lookups[(primary_out[0],"cargo_desc")]["name"]
+                        item_info = self.item_lookup_service.lookup_item_by_id(
+                            item_id, "cargo_desc"
+                            )
+                    output_name = (
+                                item_info.get("name", f"Unknown Item {item_id}") if item_info else f"Unknown Item {item_id}"
+                            )
                     job_name = job_name.replace("{0}",output_name)
 
                 job_time = recipe["time_requirement"]
@@ -332,101 +349,101 @@ class CompareJobsProcessor(BaseProcessor):
             logging.error(f"Error formatting hierarchy for UI: {e}")
             return {}
 
-    def _get_item_lookups(self):
-        """
-        Create combined item lookup dictionary from all reference data sources.
+    # def _get_item_lookups(self):
+    #     """
+    #     Create combined item lookup dictionary from all reference data sources.
 
-        Uses compound keys to prevent ID conflicts between tables.
-        Example: item_id 1050001 exists in both item_desc and cargo_desc as different items.
+    #     Uses compound keys to prevent ID conflicts between tables.
+    #     Example: item_id 1050001 exists in both item_desc and cargo_desc as different items.
 
-        Returns:
-            Dictionary mapping both (item_id, table_source) and item_id to item details
-        """
-        try:
-            item_lookups = {}
+    #     Returns:
+    #         Dictionary mapping both (item_id, table_source) and item_id to item details
+    #     """
+    #     try:
+    #         item_lookups = {}
 
-            # Combine all item reference data with compound keys to prevent overwrites
-            for data_source in ["resource_desc", "item_desc", "cargo_desc"]:
-                items = self.reference_data.get(data_source, [])
-                for item in items:
-                    item_id = item.get("id")
-                    if item_id is not None:
-                        # Use compound key (item_id, table_source) to prevent overwrites
-                        compound_key = (item_id, data_source)
-                        item_lookups[compound_key] = item
+    #         # Combine all item reference data with compound keys to prevent overwrites
+    #         for data_source in ["resource_desc", "item_desc", "cargo_desc"]:
+    #             items = self.reference_data.get(data_source, [])
+    #             for item in items:
+    #                 item_id = item.get("id")
+    #                 if item_id is not None:
+    #                     # Use compound key (item_id, table_source) to prevent overwrites
+    #                     compound_key = (item_id, data_source)
+    #                     item_lookups[compound_key] = item
 
-                        # Also maintain simple item_id lookup for backwards compatibility
-                        # Priority: item_desc > cargo_desc > resource_desc
-                        if item_id not in item_lookups or data_source == "item_desc":
-                            item_lookups[item_id] = item
+    #                     # Also maintain simple item_id lookup for backwards compatibility
+    #                     # Priority: item_desc > cargo_desc > resource_desc
+    #                     if item_id not in item_lookups or data_source == "item_desc":
+    #                         item_lookups[item_id] = item
 
-            return item_lookups
+    #         return item_lookups
 
-        except Exception as e:
-            logging.error(f"Error creating item lookups: {e}")
-            return {}
+    #     except Exception as e:
+    #         logging.error(f"Error creating item lookups: {e}")
+    #         return {}
 
-    def _lookup_item_by_id(self, item_lookups, item_id, preferred_source=None):
-        """
-        Smart item lookup that handles both compound keys and simple keys.
+    # def _lookup_item_by_id(self, item_lookups, item_id, preferred_source=None):
+    #     """
+    #     Smart item lookup that handles both compound keys and simple keys.
 
-        Args:
-            item_lookups: The lookup dictionary from _get_item_lookups()
-            item_id: The item ID to look up
-            preferred_source: Preferred table source ("item_desc", "cargo_desc", "resource_desc")
+    #     Args:
+    #         item_lookups: The lookup dictionary from _get_item_lookups()
+    #         item_id: The item ID to look up
+    #         preferred_source: Preferred table source ("item_desc", "cargo_desc", "resource_desc")
 
-        Returns:
-            Item details dictionary or None if not found
-        """
-        try:
-            # Try preferred source first if specified
-            if preferred_source:
-                compound_key = (item_id, preferred_source)
-                if compound_key in item_lookups:
-                    return item_lookups[compound_key]
+    #     Returns:
+    #         Item details dictionary or None if not found
+    #     """
+    #     try:
+    #         # Try preferred source first if specified
+    #         if preferred_source:
+    #             compound_key = (item_id, preferred_source)
+    #             if compound_key in item_lookups:
+    #                 return item_lookups[compound_key]
 
-            # Try simple item_id lookup (uses priority system)
-            if item_id in item_lookups:
-                return item_lookups[item_id]
+    #         # Try simple item_id lookup (uses priority system)
+    #         if item_id in item_lookups:
+    #             return item_lookups[item_id]
 
-            # Try all compound keys if simple lookup failed
-            for source in ["item_desc", "cargo_desc", "resource_desc"]:
-                compound_key = (item_id, source)
-                if compound_key in item_lookups:
-                    return item_lookups[compound_key]
+    #         # Try all compound keys if simple lookup failed
+    #         for source in ["item_desc", "cargo_desc", "resource_desc"]:
+    #             compound_key = (item_id, source)
+    #             if compound_key in item_lookups:
+    #                 return item_lookups[compound_key]
 
-            return None
+    #         return None
 
-        except Exception as e:
-            logging.error(f"Error looking up item {item_id}: {e}")
-            return None
+    #     except Exception as e:
+    #         logging.error(f"Error looking up item {item_id}: {e}")
+    #         return None
 
-    def _determine_preferred_item_source(self, recipe_info):
-        """
-        Determine the preferred item source based on recipe context.
+    # def _determine_preferred_item_source(self, recipe_info):
+    #     """
+    #     Determine the preferred item source based on recipe context.
 
-        Args:
-            recipe_info: Recipe information dictionary
+    #     Args:
+    #         recipe_info: Recipe information dictionary
 
-        Returns:
-            str: Preferred source ("item_desc", "cargo_desc", "resource_desc") or None
-        """
-        try:
-            recipe_name = recipe_info.get("name", "").lower()
+    #     Returns:
+    #         str: Preferred source ("item_desc", "cargo_desc", "resource_desc") or None
+    #     """
+    #     try:
+    #         recipe_name = recipe_info.get("name", "").lower()
 
-            # Heuristics to determine if this is likely a cargo item
-            cargo_indicators = ["pack", "package", "bundle", "crate", "supplies", "materials", "goods", "cargo", "shipment"]
+    #         # Heuristics to determine if this is likely a cargo item
+    #         cargo_indicators = ["pack", "package", "bundle", "crate", "supplies", "materials", "goods", "cargo", "shipment"]
 
-            for indicator in cargo_indicators:
-                if indicator in recipe_name:
-                    return "cargo_desc"
+    #         for indicator in cargo_indicators:
+    #             if indicator in recipe_name:
+    #                 return "cargo_desc"
 
-            # Default to item_desc for most crafting
-            return "item_desc"
+    #         # Default to item_desc for most crafting
+    #         return "item_desc"
 
-        except Exception as e:
-            logging.error(f"Error determining preferred source: {e}")
-            return None
+    #     except Exception as e:
+    #         logging.error(f"Error determining preferred source: {e}")
+    #         return None
 
     def _format_jobs_for_ui(self, consolidated_jobs):
         """
@@ -454,33 +471,6 @@ class CompareJobsProcessor(BaseProcessor):
             logging.error(f"Error formatting jobs for UI: {e}")
             return []
 
-    def _is_current_player(self, owner_entity_id):
-        """Check if the owner entity ID belongs to the current player."""
-        try:
-            # Get current player name from data service
-            data_service = self.services.get("data_service")
-            if not data_service or not hasattr(data_service, "client") or not data_service.client:
-                return False
-
-            current_player_name = getattr(data_service.client, "player_name", None)
-            if not current_player_name:
-                return False
-
-            # Get owner name from entity ID using claim members data
-            #if not hasattr(self, "_claim_members") or not self._claim_members:
-            #    return False
-
-            owner_id_str = str(owner_entity_id)
-            #owner_name = self._claim_members.get(owner_id_str)
-            #if not owner_name:
-            #    return False
-
-            # Check if owner is the current player
-            #return owner_name == current_player_name
-
-        except Exception as e:
-            logging.error(f"Error checking if owner {owner_entity_id} is current player: {e}")
-            return False
 
     def _send_incremental_compare_jobs_update(self, reducer_name, timestamp):
         """
@@ -517,37 +507,3 @@ class CompareJobsProcessor(BaseProcessor):
 
         if hasattr(self, "_sell_order_data"):
             self._sell_order_data.clear()
-
-    def _get_item_name_from_recipe(self, recipe_id: int) -> str:
-        """Get the actual item name from a recipe ID by looking up crafted_item_stacks."""
-        try:
-            if not self.reference_data or not recipe_id:
-                return f"Recipe {recipe_id}"
-
-            recipes = self.reference_data.get("crafting_recipe_desc", [])
-
-            for recipe in recipes:
-                if recipe.get("id") == recipe_id:
-                    recipe_name = recipe.get("name", "Unknown Recipe")
-                    crafted_items = recipe.get("crafted_item_stacks", [])
-
-                    if crafted_items and len(crafted_items) > 0:
-                        first_item = crafted_items[0]
-
-                        if isinstance(first_item, list) and len(first_item) >= 2:
-                            item_id = first_item[0]
-                            item_lookups = self._get_item_lookups()
-                            item_info = self._lookup_item_by_id(item_lookups, item_id)
-
-                            if item_info:
-                                return item_info.get("name", f"Item {item_id}")
-                    else:
-                        # Fallback to cleaned recipe name
-                        return re.sub(r"\{\d+\}", "", recipe_name).strip()
-                    break
-
-            return f"Recipe {recipe_id}"
-
-        except Exception as e:
-            logging.error(f"Error resolving item name for recipe {recipe_id}: {e}")
-            return f"Recipe {recipe_id}"
