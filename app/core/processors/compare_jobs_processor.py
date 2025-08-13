@@ -91,9 +91,7 @@ class CompareJobsProcessor(BaseProcessor):
                 #logging.info(f"TEMP - Character Stats State: {table_update}")
                 ...
             elif table_name == "inventory_state":
-                # TODO
-                #logging.info(f"TEMP - Inventory State: {table_update}")
-                ...
+                self._process_toolbelt_data(table_rows)
 
             # Try to send consolidated compare jobs if we have all necessary data
             self._send_compare_jobs_update()
@@ -144,8 +142,9 @@ class CompareJobsProcessor(BaseProcessor):
                 self._toolbelt_data = {}
 
             for row in inventory_rows:
-                #logging.info(f"TEMP - Toolbelt Row: {row}")
-                ...
+                if row["owner_entity_id"]==360287970202671962 and row["inventory_index"] == 1:
+                    logging.info(f"TEMP - Toolbelt Row: {row}")
+                    ...
         except Exception as e:
             logging.error(f"Error processing toolbelt data: {e}")
 
@@ -229,6 +228,12 @@ class CompareJobsProcessor(BaseProcessor):
                             )
                     job_name = job_name.replace("{0}",output_name)
 
+                # Boolean job passivity marker
+                if recipe["is_passive"] == 1:
+                    job_passive = True
+                else:
+                    job_passive = False
+
                 job_time = recipe["time_requirement"]
                 job_stamina = recipe["stamina_requirement"]
                 job_durability = recipe["tool_durability_lost"]
@@ -240,7 +245,6 @@ class CompareJobsProcessor(BaseProcessor):
                 job_outputs = recipe["crafted_item_stacks"]
                 job_actions = recipe["actions_required"]
                 job_hands = recipe["allow_use_hands"]
-                job_passive = recipe["is_passive"]
 
                 raw_operation = {
                     "job_id": job_id,
@@ -340,7 +344,7 @@ class CompareJobsProcessor(BaseProcessor):
                     "outputs": job_data["output_stacks"],
                     "effort": job_data["actions_required"],
                     "use_hands": job_data["allow_use_hands"],
-                    "is_passive": job_data["is_passive"],
+                    "passive": job_data["is_passive"],
                 }
 
             return formatted

@@ -16,7 +16,8 @@ class CompareJobsTab(ctk.CTkFrame):
         self.headers = ["Job",
                         "Time",
                         "Stamina",
-                        "Effort"]
+                        "Effort",
+                        "Passive"]
         self.all_data: List[Dict] = []
         self.filtered_data: List[Dict] = []
 
@@ -130,6 +131,7 @@ class CompareJobsTab(ctk.CTkFrame):
             "Time": 100,
             "Stamina": 100,
             "Effort": 100,
+            "Passive": 50,
         }
 
         for header in self.headers:
@@ -310,7 +312,7 @@ class CompareJobsTab(ctk.CTkFrame):
                             "outputs":item_group.get("outputs","Unknown"),
                             "effort":item_group.get("effort","Unknown"),
                             "use_hands": item_group.get("use_hands","Unknown"),
-                            "is_passive": item_group.get("is_passive","Unknown"),
+                            "passive": item_group.get("passive","Unknown"),
                         }
                     )
                 else:
@@ -331,7 +333,7 @@ class CompareJobsTab(ctk.CTkFrame):
                                 "outputs": operations.get("outputs",operation.get("outputs","Unknown")),
                                 "effort":operation.get("effort",operation.get("effort", "Unknown")),
                                 "use_hands": operation.get("use_hands",operation.get("use_hands","Unknown")),
-                                "is_passive": operation.get("is_passive",operation.get("is_passive","Unknown")),
+                                "passive": operation.get("passive",operation.get("passive","Unknown")),
                             }
                         )
 
@@ -412,39 +414,7 @@ class CompareJobsTab(ctk.CTkFrame):
 
         sort_key = self.sort_column.lower().replace(" ", "_")
 
-        # Special sorting for progress - convert to numerical value for proper sorting
-        if sort_key == "remaining_effort":
-
-            def progress_sort_key(x):
-                progress_str = str(x.get(sort_key, ""))
-                if "/" in progress_str:
-                    # Handle current_effort/total_effort format (e.g., "24050/24050")
-                    try:
-                        parts = progress_str.split("/")
-                        if len(parts) == 2:
-                            current = int(parts[0])
-                            total = int(parts[1])
-                            if total > 0:
-                                return (current / total) * 100  # Convert to percentage for sorting
-                            else:
-                                return 0
-                        else:
-                            return 999
-                    except ValueError:
-                        return 999
-                elif "%" in progress_str:
-                    # Handle legacy percentage format
-                    try:
-                        return int(progress_str.replace("%", ""))
-                    except ValueError:
-                        return 999
-                elif progress_str.lower() == "preparation":
-                    return -1  # Preparation comes first
-                else:
-                    return 999  # Unknown progress comes last
-
-            self.filtered_data.sort(key=progress_sort_key, reverse=self.sort_reverse)
-        elif sort_key in ["tier", "quantity"]:
+        if sort_key in ["time", "stamina", "effort", "passive"]:
             # Numeric sorting
             self.filtered_data.sort(
                 key=lambda x: float(x.get(sort_key, 0)),
@@ -489,13 +459,14 @@ class CompareJobsTab(ctk.CTkFrame):
             outputs = operation_data.get("outputs","Unknown")
             effort = operation_data.get("effort","Unknown")
             hands = operation_data.get("use_hands","Unknown")
-            passive = operation_data.get("is_passive","Unknown")
+            passive = operation_data.get("passive","Unknown")
 
             # Prepare row values
             values = [job,
                       time,
                       stamina,
                       effort,
+                      passive,
                       # Above the comment will be displayed in header-order in table
                       # Below the comment will be hidden until popup
                       durability,
@@ -506,7 +477,7 @@ class CompareJobsTab(ctk.CTkFrame):
                       xp,
                       outputs,
                       hands,
-                      passive]
+                      ]
 
             # Give tag to item id
             id_tag = id
