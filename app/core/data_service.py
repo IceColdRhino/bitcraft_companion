@@ -14,6 +14,7 @@ from ..services.inventory_service import InventoryService
 from ..services.passive_crafting_service import PassiveCraftingService
 from ..services.traveler_tasks_service import TravelerTasksService
 from ..services.active_crafting_service import ActiveCraftingService
+from ..services.compare_jobs_service import CompareJobsService
 from ..services.claim_service import ClaimService
 
 
