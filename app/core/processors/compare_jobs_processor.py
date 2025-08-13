@@ -182,51 +182,9 @@ class CompareJobsProcessor(BaseProcessor):
 
             # Add crafting recipe info to list of raw_operations
             for recipe in recipe_lookup.values():
-                job_id = f"Craft_{recipe["id"]}"
+                job_id = f"craft_{recipe["id"]}"
 
-                # Find item name and replace {}-variables
-                job_name = recipe["name"]
-                job_name = job_name.replace("{2}","{1}")
-                if "{1}" in job_name:
-                    input_name = "{1}"
-                    try:
-                        primary_in = recipe["consumed_item_stacks"][0]
-                        item_id = primary_in[0]
-                    except:
-                        continue
-
-                    if primary_in[2][0] == 0:
-                        item_info = self.item_lookup_service.lookup_item_by_id(
-                            item_id, "item_desc"
-                            )
-                    elif primary_in[2][0] == 1:
-                        item_info = self.item_lookup_service.lookup_item_by_id(
-                            item_id, "cargo_desc"
-                            )
-                    input_name = (
-                                item_info.get("name", f"Unknown Item {item_id}") if item_info else f"Unknown Item {item_id}"
-                            )
-                    job_name = job_name.replace("{1}",input_name)
-                if "{0}" in job_name:
-                    output_name = "{0}"
-                    try:
-                        primary_out = recipe["crafted_item_stacks"][0]
-                        item_id = primary_out[0]
-                    except:
-                        continue
-
-                    if primary_out[2][0] == 0:
-                        item_info = self.item_lookup_service.lookup_item_by_id(
-                            item_id, "item_desc"
-                            )
-                    elif primary_out[2][0] == 1:
-                        item_info = self.item_lookup_service.lookup_item_by_id(
-                            item_id, "cargo_desc"
-                            )
-                    output_name = (
-                                item_info.get("name", f"Unknown Item {item_id}") if item_info else f"Unknown Item {item_id}"
-                            )
-                    job_name = job_name.replace("{0}",output_name)
+                job_name = self._replace_curly_variables(recipe)
 
                 # Boolean job passivity marker
                 if recipe["is_passive"] == 1:
@@ -415,3 +373,39 @@ class CompareJobsProcessor(BaseProcessor):
 
         if hasattr(self, "_sell_order_data"):
             self._sell_order_data.clear()
+
+    def _replace_curly_variables(self, recipe):
+        """Fill in the {0}, {1}, {2} variables in names in recipe names"""
+        job_name = recipe["name"]
+        job_name = job_name.replace("{2}","{1}")
+
+        if "{1}" in job_name:
+            try:
+                primary_in = recipe["consumed_item_stacks"][0]
+                if primary_in[2][0] == 1:
+                    source = "cargo_desc"
+                else:
+                    source = "item_desc"
+                input_name = self.item_lookup_service.get_item_name(
+                    primary_in[0],source)
+            except:
+                input_name = "Unknown Item"
+                logging.debug(f"Unresolved input variable in job_id: craft_{recipe["id"]}")
+            job_name = job_name.replace("{1}",input_name)
+            
+
+        if "{0}" in job_name:
+            try:
+                primary_out = recipe["crafted_item_stacks"][0]
+                if primary_out[2][0] == 1:
+                    source = "cargo_desc"
+                else:
+                    source = "item_desc"
+                output_name = self.item_lookup_service.get_item_name(
+                    primary_out[0],source)
+            except:
+                output_name = "Unknown Item"
+                logging.debug(f"Unresolved output variable in job_id: craft_{recipe["id"]}")
+            job_name = job_name.replace("{0}",output_name)
+
+        return job_name
