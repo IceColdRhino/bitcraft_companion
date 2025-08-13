@@ -400,16 +400,55 @@ class PassiveCraftingTab(ctk.CTkFrame):
                     return self._time_to_seconds(time_str)
 
             self.filtered_data.sort(key=time_sort_key, reverse=self.sort_reverse)
+        elif sort_key == "jobs":
+            # Special sorting for jobs column using completed_jobs and total_jobs keys
+            def jobs_sort_key(x):
+                completed_jobs = x.get("completed_jobs", 0)
+                total_jobs = x.get("total_jobs", 1)
+                
+                try:
+                    # Convert to numbers if they're strings
+                    completed = int(completed_jobs) if completed_jobs is not None else 0
+                    total = int(total_jobs) if total_jobs is not None else 1
+                    
+                    # Calculate completion ratio
+                    completion_ratio = completed / total if total > 0 else 0
+                    return (completion_ratio, total)
+                except (ValueError, TypeError, ZeroDivisionError):
+                    return (0, 0)
+            
+            self.filtered_data.sort(key=jobs_sort_key, reverse=self.sort_reverse)
         elif sort_key in ["tier", "quantity"]:
-            # Numeric sorting
+            # Numeric sorting with mixed type handling and correct data keys
+            def safe_numeric_sort_key(x):
+                # Use correct data key for quantity
+                if sort_key == "quantity":
+                    value = x.get("total_quantity", 0)
+                else:
+                    value = x.get(sort_key, 0)
+                
+                try:
+                    return float(value)
+                except (ValueError, TypeError):
+                    return 0  # Default for non-numeric values
+            
             self.filtered_data.sort(
-                key=lambda x: float(x.get(sort_key, 0)),
+                key=safe_numeric_sort_key,
                 reverse=self.sort_reverse,
             )
         else:
-            # String sorting
+            # String sorting with correct data key mapping
+            def string_sort_key(x):
+                # Use correct data key for building
+                if sort_key == "building":
+                    value = x.get("building_name", "")
+                else:
+                    value = x.get(sort_key, "")
+                
+                return str(value).lower()
+            
             self.filtered_data.sort(
-                key=lambda x: str(x.get(sort_key, "")).lower(),
+                key=string_sort_key,
                 reverse=self.sort_reverse,
             )
 

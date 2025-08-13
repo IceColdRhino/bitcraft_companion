@@ -1,0 +1,192 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ master, main ]  
+
+jobs:
+  extract-version:
+    name: Extract Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get-version.outputs.version }}
+      tag: ${{ steps.get-version.outputs.tag }}
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Extract version from pyproject.toml
+      id: get-version
+      run: |
+        VERSION=$(grep "version = " pyproject.toml | cut -d'"' -f2)
+        TAG="v$VERSION"
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "tag=$TAG" >> $GITHUB_OUTPUT
+        echo "Extracted version: $VERSION"
+        echo "Release tag: $TAG"
+
+    - name: Check if release already exists
+      run: |
+        TAG="${{ steps.get-version.outputs.tag }}"
+        if git tag --list | grep -q "^$TAG$"; then
+          echo "Tag $TAG already exists!"
+          echo "This version has already been released."
+          echo "Please update the version in pyproject.toml"
+          exit 1
+        fi
+        echo "Tag $TAG is available for release"
+
+  build:
+    name: Build Executable
+    runs-on: windows-latest
+    needs: extract-version
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: latest
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+        installer-parallel: true
+
+    - name: Add Poetry to PATH and Configure
+      run: |
+        $env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"
+        [Environment]::SetEnvironmentVariable("PATH", $env:PATH, [EnvironmentVariableTarget]::Process)
+        poetry config virtualenvs.create true
+        poetry config virtualenvs.in-project true
+
+    - name: Install dependencies
+      run: |
+        $env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"
+        poetry install
+
+    - name: Add PyInstaller
+      run: |
+        $env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"
+        poetry add --group dev pyinstaller
+
+    - name: Build executable
+      run: |
+        $env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"
+        Write-Host "Building PRODUCTION RELEASE: BitCraft Companion v${{ needs.extract-version.outputs.version }}"
+        Write-Host "Creating distributable executable from master branch..."
+        Write-Host "Current directory: $(Get-Location)"
+        Write-Host "Checking for spec file..."
+        if (Test-Path "bitcraft_companion.spec") {
+          Write-Host "Found bitcraft_companion.spec"
+        } else {
+          Write-Host "bitcraft_companion.spec not found in current directory"
+          Write-Host "Files in current directory:"
+          Get-ChildItem | Select-Object Name
+          exit 1
+        }
+        poetry run python -m PyInstaller --clean bitcraft_companion.spec
+
+    - name: Verify build
+      id: verify-build
+      run: |
+        if (Test-Path "dist\*.exe") {
+          $exe = Get-ChildItem "dist\*.exe" | Select-Object -First 1
+          $filename = $exe.Name
+          $filesize = [math]::Round($exe.Length/1MB, 2)
+          
+          echo "filename=$filename" >> $env:GITHUB_OUTPUT
+          echo "filesize=$filesize" >> $env:GITHUB_OUTPUT
+          
+          Write-Host "Build successful!"
+          Write-Host "Executable: $filename"
+          Write-Host "Size: $filesize MB"
+        } else {
+          Write-Host "Build failed - no executable found"
+          exit 1
+        }
+
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: bitcraft-companion-${{ needs.extract-version.outputs.version }}
+        path: dist/*.exe
+        retention-days: 30
+
+    outputs:
+      filename: ${{ steps.verify-build.outputs.filename }}
+      filesize: ${{ steps.verify-build.outputs.filesize }}
+
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [extract-version, build]
+    permissions:
+      contents: write
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Need full history for changelog
+
+    - name: Download build artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: bitcraft-companion-${{ needs.extract-version.outputs.version }}
+        path: ./release-assets
+
+    - name: List downloaded files
+      run: |
+        echo "Downloaded files:"
+        ls -la ./release-assets/
+        
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ needs.extract-version.outputs.tag }}
+        release_name: BitCraft Companion ${{ needs.extract-version.outputs.tag }}
+        body: |
+          ## BitCraft Companion ${{ needs.extract-version.outputs.version }}
+          
+          **Release Notes:**
+          - Automated release build from master branch
+          - Build size: ${{ needs.build.outputs.filesize }} MB
+          - Generated from commit: ${{ github.sha }}
+          
+          **Installation:**
+          1. Download the executable below
+          2. Run the application
+          3. Follow the authentication setup if this is your first time
+          
+          **Changes:**
+          See the [commit history](https://github.com/${{ github.repository }}/commits/${{ github.sha }}) for detailed changes since the last release.
+        draft: false
+        prerelease: false
+
+    - name: Upload Release Asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./release-assets/${{ needs.build.outputs.filename }}
+        asset_name: ${{ needs.build.outputs.filename }}
+        asset_content_type: application/octet-stream
+
+    - name: Release Summary
+      run: |
+        echo "## Release Created Successfully! 🎉" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Version:** ${{ needs.extract-version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Tag:** ${{ needs.extract-version.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Executable:** ${{ needs.build.outputs.filename }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Size:** ${{ needs.build.outputs.filesize }} MB" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Release URL:** ${{ steps.create_release.outputs.html_url }}" >> $GITHUB_STEP_SUMMARY

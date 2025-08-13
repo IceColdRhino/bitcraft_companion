@@ -2,6 +2,7 @@ import customtkinter as ctk
 from tkinter import Menu, ttk
 from typing import List, Dict
 from app.ui.components.filter_popup import FilterPopup
+import logging
 
 
 class ClaimInventoryTab(ctk.CTkFrame):
@@ -177,11 +178,11 @@ class ClaimInventoryTab(ctk.CTkFrame):
 
     def update_data(self, new_data):
         """Receives new inventory data and converts it to the table format."""
-        import logging
-        
+
         try:
-            logging.debug(f"[ClaimInventoryTab] Updating data - type: {type(new_data)}")
-            
+            data_size = len(new_data) if isinstance(new_data, (dict, list)) else 0
+            logging.info(f"[ClaimInventoryTab] Updating data - type: {type(new_data)}, size: {data_size}")
+
             if isinstance(new_data, dict):
                 table_data = []
                 for item_name, item_info in new_data.items():
@@ -195,16 +196,19 @@ class ClaimInventoryTab(ctk.CTkFrame):
                         }
                     )
                 self.all_data = table_data
-                logging.debug(f"[ClaimInventoryTab] Processed {len(table_data)} inventory items")
+                logging.info(f"[ClaimInventoryTab] Successfully processed {len(table_data)} inventory items")
             else:
                 self.all_data = new_data if isinstance(new_data, list) else []
-                logging.debug(f"[ClaimInventoryTab] Set data to list with {len(self.all_data)} items")
+                logging.info(f"[ClaimInventoryTab] Set data to list with {len(self.all_data)} items")
 
+            # Apply filter and render table
             self.apply_filter()
-            
+            logging.info(f"[ClaimInventoryTab] Data update completed successfully")
+
         except Exception as e:
             logging.error(f"[ClaimInventoryTab] Error updating data: {e}")
             import traceback
+
             logging.debug(traceback.format_exc())
 
     def apply_filter(self):
@@ -267,11 +271,10 @@ class ClaimInventoryTab(ctk.CTkFrame):
 
     def render_table(self):
         """Clears and re-populates the Treeview with correct column layout."""
-        import logging
-        
+
         try:
             logging.debug(f"[ClaimInventoryTab] Starting table render - {len(self.filtered_data)} items")
-            
+
             # Clear existing rows
             existing_children = self.tree.get_children()
             logging.debug(f"[ClaimInventoryTab] Clearing {len(existing_children)} existing rows")
@@ -313,9 +316,12 @@ class ClaimInventoryTab(ctk.CTkFrame):
                 except Exception as e:
                     logging.error(f"[ClaimInventoryTab] Error adding row for {item_name}: {e}")
 
-            logging.debug(f"[ClaimInventoryTab] Table render complete - added {rows_added} main rows, {child_rows_added} child rows")
-            
+            logging.info(
+                f"[ClaimInventoryTab] Table render complete - added {rows_added} main rows, {child_rows_added} child rows"
+            )
+
         except Exception as e:
             logging.error(f"[ClaimInventoryTab] Critical error during table render: {e}")
             import traceback
+
             logging.debug(traceback.format_exc())

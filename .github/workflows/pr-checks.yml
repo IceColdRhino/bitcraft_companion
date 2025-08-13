@@ -1,0 +1,231 @@
+name: PR Checks
+
+on:
+  pull_request:
+    branches: [ dev ]
+
+jobs:
+  version-check:
+    name: Verify Version Bump
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout PR
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Get current version from PR
+      id: pr-version
+      run: |
+        NEW_VERSION=$(grep "version = " pyproject.toml | cut -d'"' -f2)
+        echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+        echo "PR Version: $NEW_VERSION"
+
+    - name: Get version from dev branch
+      id: dev-version
+      run: |
+        git checkout origin/dev
+        OLD_VERSION=$(grep "version = " pyproject.toml | cut -d'"' -f2)
+        echo "old_version=$OLD_VERSION" >> $GITHUB_OUTPUT
+        echo "Dev Version: $OLD_VERSION"
+        git checkout -
+
+    - name: Compare versions
+      run: |
+        OLD_VERSION="${{ steps.dev-version.outputs.old_version }}"
+        NEW_VERSION="${{ steps.pr-version.outputs.new_version }}"
+        
+        echo "Comparing versions:"
+        echo "  Dev branch: $OLD_VERSION"
+        echo "  PR branch:  $NEW_VERSION"
+        
+        if [ "$OLD_VERSION" = "$NEW_VERSION" ]; then
+          echo "VERSION CHECK FAILED"
+          echo "Version must be updated in pyproject.toml before merging"
+          echo "Current version: $OLD_VERSION"
+          echo "Please increment the version (e.g., to $OLD_VERSION.1 or next minor/major version)"
+          exit 1
+        fi
+        
+        echo "Version updated from $OLD_VERSION to $NEW_VERSION"
+
+    - name: Validate version format
+      run: |
+        VERSION="${{ steps.pr-version.outputs.new_version }}"
+        if [[ ! $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "Invalid version format: $VERSION"
+          echo "Version must follow semantic versioning (e.g., 1.2.3)"
+          exit 1
+        fi
+        echo "Version format is valid: $VERSION"
+
+    - name: Check version increase
+      run: |
+        OLD_VERSION="${{ steps.dev-version.outputs.old_version }}"
+        NEW_VERSION="${{ steps.pr-version.outputs.new_version }}"
+        
+        # Convert versions to comparable numbers
+        OLD_MAJOR=$(echo $OLD_VERSION | cut -d. -f1)
+        OLD_MINOR=$(echo $OLD_VERSION | cut -d. -f2)
+        OLD_PATCH=$(echo $OLD_VERSION | cut -d. -f3)
+        
+        NEW_MAJOR=$(echo $NEW_VERSION | cut -d. -f1)
+        NEW_MINOR=$(echo $NEW_VERSION | cut -d. -f2)
+        NEW_PATCH=$(echo $NEW_VERSION | cut -d. -f3)
+        
+        OLD_NUMERIC=$((OLD_MAJOR * 10000 + OLD_MINOR * 100 + OLD_PATCH))
+        NEW_NUMERIC=$((NEW_MAJOR * 10000 + NEW_MINOR * 100 + NEW_PATCH))
+        
+        if [ $NEW_NUMERIC -le $OLD_NUMERIC ]; then
+          echo "Version must be higher than current version"
+          echo "Current: $OLD_VERSION ($OLD_NUMERIC)"
+          echo "New:     $NEW_VERSION ($NEW_NUMERIC)"
+          exit 1
+        fi
+        
+        echo "Version properly incremented"
+
+  test:
+    name: Run Tests
+    runs-on: windows-latest
+    needs: version-check
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: latest
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+        installer-parallel: true
+
+    - name: Add Poetry to PATH and Configure
+      run: |
+        $env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"
+        [Environment]::SetEnvironmentVariable("PATH", $env:PATH, [EnvironmentVariableTarget]::Process)
+        poetry config virtualenvs.create true
+        poetry config virtualenvs.in-project true
+
+    - name: Cache dependencies
+      uses: actions/cache@v4
+      with:
+        path: .venv
+        key: venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+
+    - name: Install dependencies
+      run: |
+        $env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"
+        poetry install
+
+    - name: Run tests
+      run: |
+        $env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"
+        Write-Host "Running full test suite..."
+        poetry run pytest tests/ -v --tb=short
+        if ($LASTEXITCODE -ne 0) {
+          Write-Host "❌ Tests failed! Please fix failing tests before merge."
+          exit 1
+        }
+        Write-Host "✅ All tests passed! Ready for merge."
+
+  build-test:
+    name: Test Build Process
+    runs-on: windows-latest
+    needs: [version-check, test]
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: latest
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+        installer-parallel: true
+
+    - name: Add Poetry to PATH and Configure
+      run: |
+        $env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"
+        [Environment]::SetEnvironmentVariable("PATH", $env:PATH, [EnvironmentVariableTarget]::Process)
+        poetry config virtualenvs.create true
+        poetry config virtualenvs.in-project true
+
+    - name: Install dependencies
+      run: |
+        $env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"
+        poetry install
+
+    - name: Add PyInstaller
+      run: |
+        $env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"
+        poetry add --group dev pyinstaller
+
+    - name: Test build process
+      run: |
+        $env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"
+        Write-Host "Testing executable build process..."
+        Write-Host "Current directory: $(Get-Location)"
+        Write-Host "Checking for spec file..."
+        if (Test-Path "bitcraft_companion.spec") {
+          Write-Host "Found bitcraft_companion.spec"
+        } else {
+          Write-Host "bitcraft_companion.spec not found in current directory"
+          Write-Host "Files in current directory:"
+          Get-ChildItem | Select-Object Name
+          exit 1
+        }
+        poetry run python -m PyInstaller --clean bitcraft_companion.spec
+        
+    - name: Verify build output
+      run: |
+        if (Test-Path "dist\*.exe") {
+          $exe = Get-ChildItem "dist\*.exe" | Select-Object -First 1
+          Write-Host "✅ Build test successful!"
+          Write-Host "Generated: $($exe.Name)"
+          Write-Host "Size: $([math]::Round($exe.Length/1MB, 2)) MB"
+        } else {
+          Write-Host "Build test failed - no executable generated"
+          exit 1
+        }
+
+  pr-summary:
+    name: PR Summary
+    runs-on: ubuntu-latest
+    needs: [version-check, test, build-test]
+    if: always()
+    steps:
+    - name: PR Status Summary
+      run: |
+        echo "## PR Validation Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        VERSION_STATUS="${{ needs.version-check.result }}"
+        TEST_STATUS="${{ needs.test.result }}"
+        BUILD_STATUS="${{ needs.build-test.result }}"
+        
+        echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Version Bump | $( [ "$VERSION_STATUS" = "success" ] && echo "Passed" || echo "Failed" ) |" >> $GITHUB_STEP_SUMMARY
+        echo "| Tests | $( [ "$TEST_STATUS" = "success" ] && echo "Passed" || echo "Failed" ) |" >> $GITHUB_STEP_SUMMARY
+        echo "| Build Test | $( [ "$BUILD_STATUS" = "success" ] && echo "Passed" || echo "Failed" ) |" >> $GITHUB_STEP_SUMMARY
+        
+        if [ "$VERSION_STATUS" = "success" ] && [ "$TEST_STATUS" = "success" ] && [ "$BUILD_STATUS" = "success" ]; then
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**All checks passed! This PR is ready to merge.**" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Some checks failed. Please fix issues before merging.**" >> $GITHUB_STEP_SUMMARY
+        fi

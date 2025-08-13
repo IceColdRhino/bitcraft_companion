@@ -78,7 +78,7 @@ class MessageRouter:
             # Process table updates
             tables = status.get("Committed", {}).get("tables", [])
             logging.debug(f"[MessageRouter] Processing {len(tables)} table updates for reducer: {reducer_name}")
-            
+
             for table_update in tables:
                 table_name = table_update.get("table_name", "")
                 logging.debug(f"[MessageRouter] Table update - Name: {table_name}")
@@ -86,7 +86,7 @@ class MessageRouter:
                 # Route to appropriate processors
                 processors = self.table_to_processors.get(table_name, [])
                 logging.debug(f"[MessageRouter] Found {len(processors)} processors for table {table_name}")
-                
+
                 for processor in processors:
                     try:
                         logging.debug(f"[MessageRouter] Routing to {processor.__class__.__name__} for table {table_name}")
@@ -122,9 +122,15 @@ class MessageRouter:
             # Process updates for each processor
             for processor, updates in processor_updates.items():
                 try:
-                    logging.debug(f"[MessageRouter] {update_type} - Sending {len(updates)} table updates to {processor.__class__.__name__}")
+                    logging.debug(
+                        f"[MessageRouter] {update_type} - Sending {len(updates)} table updates to {processor.__class__.__name__}"
+                    )
                     for update in updates:
-                        processor.process_subscription(update)
+                        # Pass is_initial context to processors that support it
+                        if hasattr(processor, "process_subscription_with_context"):
+                            processor.process_subscription_with_context(update, is_initial=is_initial)
+                        else:
+                            processor.process_subscription(update)
                 except Exception as e:
                     logging.error(f"[MessageRouter] Error in {processor.__class__.__name__} processing {update_type}: {e}")
 
@@ -138,7 +144,7 @@ class MessageRouter:
             tables = database_update.get("tables", [])
 
             logging.info(f"[MessageRouter] Processing InitialSubscription with {len(tables)} table updates")
-            
+
             # Log which tables are in the initial subscription
             table_names = [table.get("table_name", "unknown") for table in tables]
             logging.debug(f"[MessageRouter] InitialSubscription tables: {table_names}")

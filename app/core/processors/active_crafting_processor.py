@@ -4,7 +4,6 @@ Active crafting processor for handling progressive_action_state table updates.
 
 import re
 import json
-import time
 import logging
 from .base_processor import BaseProcessor
 
@@ -16,6 +15,13 @@ class ActiveCraftingProcessor(BaseProcessor):
     Handles both real-time transactions and batch subscription updates
     for active crafting (progressive action) changes.
     """
+
+    def __init__(self, data_queue, services, reference_data):
+        """Initialize the processor."""
+        super().__init__(data_queue, services, reference_data)
+
+        # Store current active crafting data for reference
+        self.current_active_crafting_data = []
 
     def get_table_names(self):
         """Return list of table names this processor handles."""
@@ -220,12 +226,6 @@ class ActiveCraftingProcessor(BaseProcessor):
             # Send incremental update for progressive_action_state and public_progressive_action_state, full refresh for others
             if has_active_crafting_changes:
                 if table_name in ["progressive_action_state", "public_progressive_action_state"]:
-                    # Debug what data we have before sending incremental update
-                    progressive_data_count = len(getattr(self, "_progressive_action_data", {}))
-                    building_data_count = len(getattr(self, "_building_data", {}))
-                    member_data_count = len(getattr(self, "_claim_members", {}))
-                    public_actions_count = len(getattr(self, "_public_actions", set()))
-
                     self._send_incremental_active_crafting_update(reducer_name, timestamp)
                 else:
                     logging.info(f"[ACTIVE_CRAFT_DEBUG] Sending full refresh for table: {table_name}")
@@ -410,6 +410,9 @@ class ActiveCraftingProcessor(BaseProcessor):
             # Convert dictionary to list format for UI
             crafting_list = self._format_crafting_for_ui(consolidated_crafting)
 
+            # Store current data for progress tracking
+            self.current_active_crafting_data = crafting_list
+
             # Send to UI
             self._queue_update("active_crafting_update", crafting_list)
 
@@ -442,8 +445,7 @@ class ActiveCraftingProcessor(BaseProcessor):
                 owner_id = action_data.get("owner_entity_id")
                 recipe_id = action_data.get("recipe_id")
 
-            # Get reference data for lookups
-            item_lookups = self._get_item_lookups()
+            # Use shared item lookup service
             recipe_lookup = {r["id"]: r for r in self.reference_data.get("crafting_recipe_desc", [])}
             building_desc_lookup = {b["id"]: b["name"] for b in self.reference_data.get("building_desc", [])}
 
@@ -541,9 +543,9 @@ class ActiveCraftingProcessor(BaseProcessor):
                             base_quantity = item_stack[1]
                             total_quantity = base_quantity * craft_count
 
-                            # Look up item details using smart lookup with preferred source
+                            # Look up item details using shared lookup service with preferred source
                             preferred_source = self._determine_preferred_item_source(recipe_info)
-                            item_info = self._lookup_item_by_id(item_lookups, item_id, preferred_source)
+                            item_info = self.item_lookup_service.lookup_item_by_id(item_id, preferred_source)
                             item_name = (
                                 item_info.get("name", f"Unknown Item {item_id}") if item_info else f"Unknown Item {item_id}"
                             )
@@ -729,75 +731,6 @@ class ActiveCraftingProcessor(BaseProcessor):
         except Exception as e:
             logging.error(f"Error formatting hierarchy for UI: {e}")
             return {}
-
-    def _get_item_lookups(self):
-        """
-        Create combined item lookup dictionary from all reference data sources.
-
-        Uses compound keys to prevent ID conflicts between tables.
-        Example: item_id 1050001 exists in both item_desc and cargo_desc as different items.
-
-        Returns:
-            Dictionary mapping both (item_id, table_source) and item_id to item details
-        """
-        try:
-            item_lookups = {}
-
-            # Combine all item reference data with compound keys to prevent overwrites
-            for data_source in ["resource_desc", "item_desc", "cargo_desc"]:
-                items = self.reference_data.get(data_source, [])
-                for item in items:
-                    item_id = item.get("id")
-                    if item_id is not None:
-                        # Use compound key (item_id, table_source) to prevent overwrites
-                        compound_key = (item_id, data_source)
-                        item_lookups[compound_key] = item
-
-                        # Also maintain simple item_id lookup for backwards compatibility
-                        # Priority: item_desc > cargo_desc > resource_desc
-                        if item_id not in item_lookups or data_source == "item_desc":
-                            item_lookups[item_id] = item
-
-            return item_lookups
-
-        except Exception as e:
-            logging.error(f"Error creating item lookups: {e}")
-            return {}
-
-    def _lookup_item_by_id(self, item_lookups, item_id, preferred_source=None):
-        """
-        Smart item lookup that handles both compound keys and simple keys.
-
-        Args:
-            item_lookups: The lookup dictionary from _get_item_lookups()
-            item_id: The item ID to look up
-            preferred_source: Preferred table source ("item_desc", "cargo_desc", "resource_desc")
-
-        Returns:
-            Item details dictionary or None if not found
-        """
-        try:
-            # Try preferred source first if specified
-            if preferred_source:
-                compound_key = (item_id, preferred_source)
-                if compound_key in item_lookups:
-                    return item_lookups[compound_key]
-
-            # Try simple item_id lookup (uses priority system)
-            if item_id in item_lookups:
-                return item_lookups[item_id]
-
-            # Try all compound keys if simple lookup failed
-            for source in ["item_desc", "cargo_desc", "resource_desc"]:
-                compound_key = (item_id, source)
-                if compound_key in item_lookups:
-                    return item_lookups[compound_key]
-
-            return None
-
-        except Exception as e:
-            logging.error(f"Error looking up item {item_id}: {e}")
-            return None
 
     def _determine_preferred_item_source(self, recipe_info):
         """
@@ -996,6 +929,9 @@ class ActiveCraftingProcessor(BaseProcessor):
             crafting_list = self._format_crafting_for_ui(consolidated_crafting)
 
             if crafting_list:
+                # Store current data for progress tracking
+                self.current_active_crafting_data = crafting_list
+
                 # Send targeted update with incremental flag
                 self._queue_update(
                     "active_crafting_update",
@@ -1058,8 +994,7 @@ class ActiveCraftingProcessor(BaseProcessor):
 
                         if isinstance(first_item, list) and len(first_item) >= 2:
                             item_id = first_item[0]
-                            item_lookups = self._get_item_lookups()
-                            item_info = self._lookup_item_by_id(item_lookups, item_id)
+                            item_info = self.item_lookup_service.lookup_item_by_id(item_id)
 
                             if item_info:
                                 return item_info.get("name", f"Item {item_id}")

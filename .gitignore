@@ -16,12 +16,6 @@ dist/
 build/
 build_exe.bat
 
-# PyInstaller spec files (user-specific build configuration)
-*.spec
-
-# Build scripts (user-specific)
-generate_version.py
-
 # Data and results
 server/
 results/
@@ -33,7 +27,7 @@ player_data.json
 
 # File types to ignore
 *.xlsx
-*.txt
 *.log
-.*
 *.zip
+*.back
+.cl*

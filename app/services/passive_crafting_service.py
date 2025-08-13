@@ -236,13 +236,6 @@ class PassiveCraftingService:
             logging.error(f"Error processing crafting data from processor: {e}")
             return []
 
-    def get_subscription_queries(self, building_ids: List[str]) -> List[str]:
-        """Returns a list of SQL query strings for subscribing to passive crafting updates."""
-        if not building_ids:
-            return []
-
-        logging.info(f"Generating FIXED passive crafting subscription queries for {len(building_ids)} buildings.")
-        return [f"SELECT * FROM passive_craft_state WHERE building_entity_id = '{bid}';" for bid in building_ids]
 
     def get_all_crafting_data_enhanced(self) -> List[Dict]:
         """

@@ -88,7 +88,6 @@ class QueryService:
             logging.error(f"Error fetching claim buildings: {e}")
             return []
 
-
     def get_claim_members(self, claim_id: str) -> List[Dict]:
         """Get all members of a claim. Still used by claim_members_service."""
         try:
@@ -103,11 +102,13 @@ class QueryService:
     def get_subscription_queries(self, user_id: str, claim_id: str) -> List[str]:
         """Get all subscription queries for a claim - matching your DataManager pattern."""
         queries = [
-            # ("SELECT * FROM claim_member_state WHERE player_entity_id = '{user_id}';".format(user_id=user_id)),
+            # Get traveler tasks for player
             ("SELECT * FROM traveler_task_state WHERE player_entity_id = '{user_id}';".format(user_id=user_id)),
-            ("SELECT * FROM player_state WHERE entity_id = '{user_id}';".format(user_id=user_id)),
+            # Get claim buildings
             ("SELECT * FROM building_state WHERE claim_entity_id = '{claim_id}';".format(claim_id=claim_id)),
+            # Get claim members' information
             ("SELECT * FROM claim_member_state WHERE claim_entity_id = '{claim_id}';".format(claim_id=claim_id)),
+            # Get player's claim information
             (
                 "SELECT claim_state.* "
                 "FROM claim_state "
@@ -115,12 +116,14 @@ class QueryService:
                 "ON claim_state.entity_id = claim_member_state.claim_entity_id "
                 "WHERE claim_member_state.player_entity_id = '{user_id}';".format(user_id=user_id)
             ),
+            # Get player's claim local state information
             (
                 "SELECT claim_local_state.* "
                 "FROM claim_local_state "
                 "JOIN claim_member_state ON claim_local_state.entity_id = claim_member_state.claim_entity_id "
                 "WHERE claim_member_state.player_entity_id = '{user_id}';".format(user_id=user_id)
             ),
+            # Get current traveler tasks
             (
                 "SELECT traveler_task_desc.* "
                 "FROM traveler_task_desc "
@@ -128,6 +131,7 @@ class QueryService:
                 "ON traveler_task_state.task_id = traveler_task_desc.id "
                 "WHERE traveler_task_state.player_entity_id = '{user_id}';".format(user_id=user_id)
             ),
+            # Get claim building nicknames
             (
                 "SELECT building_nickname_state.* "
                 "FROM building_nickname_state "
@@ -135,11 +139,13 @@ class QueryService:
                 "ON building_state.entity_id = building_nickname_state.entity_id "
                 "WHERE building_state.claim_entity_id = '{claim_id}';".format(claim_id=claim_id)
             ),
+            # Get claim building inventories
             (
                 "SELECT inventory_state.* FROM inventory_state "
                 "JOIN building_state ON inventory_state.owner_entity_id = building_state.entity_id "
                 "WHERE building_state.claim_entity_id = '{claim_id}';".format(claim_id=claim_id)
             ),
+            # Get active crafting state for users in the claim
             (
                 "SELECT progressive_action_state.* "
                 "FROM progressive_action_state "
@@ -147,6 +153,7 @@ class QueryService:
                 "ON progressive_action_state.building_entity_id = building_state.entity_id "
                 "WHERE building_state.claim_entity_id = '{claim_id}';".format(claim_id=claim_id)
             ),
+            # Get active crafting buildings in claim if accept help is turned on
             (
                 "SELECT public_progressive_action_state.* "
                 "FROM public_progressive_action_state "
@@ -154,6 +161,7 @@ class QueryService:
                 "ON public_progressive_action_state.building_entity_id = building_state.entity_id "
                 "WHERE building_state.claim_entity_id = '{claim_id}';".format(claim_id=claim_id)
             ),
+            # Get passive crafting state for buildings in the claim
             (
                 "SELECT passive_craft_state.* "
                 "FROM passive_craft_state "

@@ -2,19 +2,19 @@ import json
 import logging
 import os
 import re
+import socket
 import sqlite3
-import sys
 import threading
-import uuid
 import time
+import uuid
 
 import keyring
 import requests
 from websockets import Subprotocol
-from websockets.sync.client import connect, ClientConnection
 from websockets.exceptions import ConnectionClosed
+from websockets.sync.client import ClientConnection, connect
 
-from ..core.data_paths import get_user_data_path, get_bundled_data_path
+from ..core.data_paths import get_bundled_data_path, get_user_data_path
 
 
 class BitCraft:
@@ -121,19 +121,15 @@ class BitCraft:
 
             try:
                 self.ws_connection.send(json.dumps(subscribe_message))
-
-                # Use the internal method to listen for the specific response
                 return list(self._receive_one_off_query(message_id))
             except (ConnectionClosed, TimeoutError) as e:
                 logging.error(f"Failed to send or receive query due to connection issue: {e}")
-                # You might want to handle reconnection logic here
                 self.close_websocket()
                 return None
             except Exception as e:
                 logging.error(f"An unexpected error occurred during query: {e}")
                 return None
 
-    # --- INTERNAL: Helper for the query method ---
     def _receive_one_off_query(self, message_id: str):
         """Listens for a specific OneOffQueryResponse and yields its rows."""
         if not self.ws_connection:
@@ -156,14 +152,13 @@ class BitCraft:
                                 yield json.loads(row_str)
                             except json.JSONDecodeError:
                                 logging.error(f"Failed to decode JSON from WebSocket row: {row_str[:100]}...")
-                    return  # Exit after processing the correct response
+                    return
 
                 elif "error" in data:
                     logging.error(f"WebSocket error received for message {message_id}: {data['error']}")
                     return
 
             except TimeoutError:
-                # No message received, just continue waiting
                 continue
             except json.JSONDecodeError:
                 logging.error(f"Failed to decode JSON from WebSocket message: {msg[:100]}...")
@@ -175,9 +170,6 @@ class BitCraft:
                 return
 
         logging.warning(f"Timed out waiting for response to query with message_id: {message_id}")
-
-    # --- All your other existing methods remain here ---
-    # (e.g., _get_credential_from_keyring, authenticate, connect_websocket, etc.)
 
     def _get_credential_from_keyring(self, key_name: str) -> str | None:
         try:
@@ -234,11 +226,10 @@ class BitCraft:
             result = [dict(row) for row in rows]
             for row in result:
                 for field, value in row.items():
-                    if isinstance(value, str) and value.strip():  # Only try to parse non-empty strings
+                    if isinstance(value, str) and value.strip():
                         try:
                             row[field] = json.loads(value)
                         except (json.JSONDecodeError, ValueError):
-                            # Leave as string if JSON parsing fails
                             pass
             conn.close()
             return result
@@ -337,7 +328,6 @@ class BitCraft:
         try:
             results = self.query(query_string)
 
-            # The query method returns a list of results
             if results and isinstance(results, list) and len(results) > 0:
                 user_id = results[0].get("entity_id")
                 if user_id:
@@ -468,6 +458,84 @@ class BitCraft:
         self.headers = {"Authorization": self.auth}
         logging.info(f"WebSocket URI set: {self.ws_uri}")
 
+    def diagnose_connection_issues(self):
+        """Comprehensive connection diagnostics."""
+        logging.info("=== Connection Diagnostics ===")
+
+        # Check internet connectivity
+        try:
+            socket.create_connection(("8.8.8.8", 53), timeout=5)
+            logging.info("Internet connectivity: OK")
+        except Exception as e:
+            logging.error(f"Internet connectivity: FAILED - {e}")
+            return False
+
+        # Check DNS resolution
+        try:
+            ip = socket.gethostbyname(self.host)
+            logging.info(f"DNS resolution: {self.host} -> {ip}")
+        except Exception as e:
+            logging.error(f"DNS resolution failed for {self.host}: {e}")
+            return False
+
+        # Check HTTP/HTTPS connectivity to the host
+        try:
+            response = requests.get(f"https://api.bitcraftonline.com/status-get", timeout=10)
+            logging.info(f"HTTPS connectivity: {response.status_code}")
+        except Exception as e:
+            logging.warning(f"HTTPS connectivity test failed: {e}")
+
+        return self.test_server_connectivity()
+
+    def test_server_connectivity(self):
+        """Test basic connectivity to the server before attempting WebSocket connection."""
+
+        try:
+            # Parse host from ws_uri or use self.host
+            host = self.host
+            port = 443
+
+            logging.info(f"Testing connectivity to {host}:{port}...")
+
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(10)
+            result = sock.connect_ex((host, port))
+            sock.close()
+
+            if result == 0:
+                logging.info(f"Successfully connected to {host}:{port}")
+                return True
+            else:
+                logging.error(f"Failed to connect to {host}:{port} (error code: {result})")
+                return False
+
+        except socket.gaierror as e:
+            logging.error(f"DNS resolution failed for {host}: {e}")
+            return False
+        except Exception as e:
+            logging.error(f"Connectivity test failed: {e}")
+            return False
+
+    def connect_websocket_with_retry(self, max_retries=3, base_delay=1.0):
+        """Connect to WebSocket with retry logic and exponential backoff."""
+        for attempt in range(max_retries):
+            try:
+                logging.info(f"WebSocket connection attempt {attempt + 1}/{max_retries}")
+                self.connect_websocket()
+                return
+
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    logging.error(f"All {max_retries} connection attempts failed")
+                    raise
+
+                # Calculate delay with exponential backoff
+                delay = base_delay * (2**attempt)
+                logging.warning(f"Connection attempt {attempt + 1} failed: {e}")
+                logging.info(f"Retrying in {delay} seconds...")
+
+                time.sleep(delay)
+
     def connect_websocket(self):
         with self.ws_lock:
             if not self.ws_uri:
@@ -476,6 +544,11 @@ class BitCraft:
                 logging.info("WebSocket connection already exists. Reusing existing connection.")
                 return
             try:
+                logging.info(f"Attempting to connect to: {self.ws_uri}")
+                logging.info(f"Using subprotocol: {self.proto}")
+                logging.info(f"Additional headers: {self.headers}")
+
+                # Configure connection with explicit timeouts and error handling
                 self.ws_connection = connect(
                     self.ws_uri,
                     additional_headers=self.headers,
@@ -483,11 +556,34 @@ class BitCraft:
                     max_size=None,
                     max_queue=None,
                 )
-                first_msg = self.ws_connection.recv()
-                logging.info(f"Initial WebSocket handshake message: {first_msg[:20]}...")
-                logging.info("WebSocket connection established")
+
+                # Try to receive the first message with a timeout
+                try:
+                    first_msg = self.ws_connection.recv(timeout=10.0)
+                    logging.info(f"Initial WebSocket handshake message: {first_msg[:20]}...")
+                    logging.info("WebSocket connection established successfully")
+                except TimeoutError:
+                    logging.warning("Timeout waiting for initial handshake message, but connection may be valid")
+
             except Exception as e:
                 logging.error(f"Failed to establish WebSocket connection: {e}")
+                logging.error(f"Connection details - URI: {self.ws_uri}")
+                logging.error(f"Connection details - Headers: {self.headers}")
+
+                # Provide more specific error messages
+                error_msg = str(e).lower()
+                if "timeout" in error_msg or "timed out" in error_msg:
+                    logging.error("Connection timed out. Possible causes:")
+                    logging.error("  1. Server is down or unreachable")
+                    logging.error("  2. Network/firewall blocking the connection")
+                    logging.error("  3. DNS resolution issues")
+                elif "connection refused" in error_msg:
+                    logging.error("Connection refused. The server may be down.")
+                elif "name or service not known" in error_msg or "getaddrinfo failed" in error_msg:
+                    logging.error("DNS resolution failed. Check your internet connection.")
+                elif "ssl" in error_msg or "certificate" in error_msg:
+                    logging.error("SSL/TLS error. Check server certificate or try different connection settings.")
+
                 self.ws_connection = None
                 raise
 
@@ -497,7 +593,6 @@ class BitCraft:
 
         try:
             with self.ws_lock:
-                # Signal subscription thread to stop
                 self._stop_subscription.set()
 
                 # Wait for subscription thread with timeout
@@ -535,7 +630,7 @@ class BitCraft:
                 logging.warning("No queries provided for subscription.")
                 return
 
-            # Stop existing subscription thread if running (but don't send unsubscribe)
+            # Stop existing subscription thread if running but don't send unsubscribe
             if self.subscription_thread and self.subscription_thread.is_alive():
                 logging.info("Stopping existing subscription thread...")
                 self._stop_subscription.set()
@@ -627,7 +722,7 @@ class BitCraft:
 
     def logout(self):
         try:
-            self.close_websocket()  # Ensure connection and listener are stopped
+            self.close_websocket()
             self._delete_credential_from_keyring("authorization_token")
             self._delete_credential_from_keyring("email")
             self.auth = None

@@ -38,17 +38,6 @@ class ActiveCraftingService:
         self.progress_timer_stop_event = threading.Event()
         self.ui_update_callback = None
 
-    def get_subscription_queries(self, building_ids: List[str]) -> List[str]:
-        """Returns SQL query strings for subscribing to progressive action (active crafting) updates."""
-        if not building_ids:
-            return []
-
-        queries = []
-        for building_id in building_ids:
-            queries.append(f"SELECT * FROM progressive_action_state WHERE building_entity_id = '{building_id}';")
-
-        logging.info(f"Generated progressive action subscription queries for {len(building_ids)} buildings")
-        return queries
 
     def get_all_active_crafting_data_enhanced(self) -> List[Dict]:
         """

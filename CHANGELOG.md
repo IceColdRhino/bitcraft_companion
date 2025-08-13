@@ -5,6 +5,66 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.20]
+### Added
+* Comprehensive tests for UI tab sorting logic
+* Player state transaction processing and subscription context handling for traveler task
+* Update login failure message to provide clearer instructions for users
+* Update subscription queries to include traveler task timers for improved data retrieval
+
+### Improved
+* Player state update handling with source tracking and initial subscription logic
+* Enhance task refresh timer logic for improved state handling and user feedback
+* Improve column sorting. Now mixed value columns sort logically
+* Refactor item lookup logic to use shared item lookup service across processors
+* Refactor task refresh expiration logic for improved logging and state management
+* Improve traveler task timer reliability at start up
+* Fixed child jobs breaking into sub-jobs in the passive crafting tab
+
+### Fixed 
+* Traveler task timer showing incorrect timer at launch when tasks refresh while Companion is closed
+
+## [0.2.18] 
+### Improved
+* Traveler tasks expiration handling with proper None initialization and countdown logic
+
+### Fixed
+* Traveler tasks no longer writing to real player_data.json during tests by implementing proper path mocking
+* Traveler tasks show correct time at launch
+
+### Technical
+* Better separation of test and production environments
+
+## [0.2.17]
+### Changed
+* Removed redundant test job from CI workflow for improved efficiency
+* Enhanced CI workflows with better dependency installation and testing processes
+
+## [0.2.16]
+### Added
+* Comprehensive tests and GitHub Actions CI/CD pipeline for automated testing
+* Enhanced WebSocket connection handling with comprehensive diagnostics and retry logic
+* Current active crafting data storage for improved progress tracking in ActiveCraftingProcessor
+* Enhanced logging across various components for improved traceability and debugging
+
+### Improved
+* WebSocket connection stability with retry mechanisms and Python version-specific handling
+* Crafting notifications to only alert for passive crafts belonging to the current player
+* Data handling by removing redundant subscription query methods from various services
+* Progress tracking by streamlining processor management and removing redundant logic
+* Python version requirement updated to >=3.10 for better compatibility
+
+### Removed
+* ClaimMembersService class and associated caching logic for simplified architecture
+* Redundant progress tracking logic from DataService
+* Redundant subscription query methods from various services
+
+### Technical
+* Enhanced WebSocket diagnostics with connection testing and error handling
+* Improved error logging and debugging capabilities
+* Streamlined data processing architecture
+* Better separation of concerns in service layer
+
 ## [0.2.14]
 ### Added
 * Comprehensive test suite for data processing, export functionality, timers, UI components, and error handling

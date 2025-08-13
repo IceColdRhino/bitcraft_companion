@@ -1,17 +1,20 @@
-"""
-Refactored DataService using MessageRouter and data processors.
-
-This is the clean coordinator that uses the new modular architecture
-while preserving the exact same UI queue interface and subscription patterns.
-"""
-
-import threading
-import queue
-import time
 import logging
+import queue
+import threading
+import time
+
 from .message_router import MessageRouter
 from .processors import InventoryProcessor, CraftingProcessor, TasksProcessor, ClaimsProcessor, ActiveCraftingProcessor, CompareJobsProcessor
+from .utils import ItemLookupService
 from ..services.notification_service import NotificationService
+from ..client.query_service import QueryService
+from ..models.player import Player
+from ..models.claim import Claim
+from ..services.inventory_service import InventoryService
+from ..services.passive_crafting_service import PassiveCraftingService
+from ..services.traveler_tasks_service import TravelerTasksService
+from ..services.active_crafting_service import ActiveCraftingService
+from ..services.claim_service import ClaimService
 
 
 class DataService:
@@ -24,27 +27,11 @@ class DataService:
     """
 
     def __init__(self):
-        # Import here to prevent circular dependencies
+        # Import BitCraft lazily to avoid circular dependency with core.__init__.py
         from ..client.bitcraft_client import BitCraft
-        from ..models.player import Player
-        from ..models.claim import Claim
-        from ..services.inventory_service import InventoryService
-        from ..services.passive_crafting_service import PassiveCraftingService
-        from ..services.traveler_tasks_service import TravelerTasksService
-        from ..services.active_crafting_service import ActiveCraftingService
-        from ..services.compare_jobs_service import CompareJobsService
-
-        self.BitCraftClass = BitCraft
-        self.PlayerClass = Player
-        self.ClaimClass = Claim
-        self.InventoryServiceClass = InventoryService
-        self.PassiveCraftingServiceClass = PassiveCraftingService
-        self.TravelerTasksServiceClass = TravelerTasksService
-        self.ActiveCraftingServiceClass = ActiveCraftingService
-        self.CompareJobsServiceClass = CompareJobsService
-
+        
         # Instantiate the client immediately to load saved user data
-        self.client = self.BitCraftClass()
+        self.client = BitCraft()
 
         self.player = None
         self.claim = None
@@ -95,9 +82,6 @@ class DataService:
                     if hasattr(processor, "stop_real_time_timer"):
                         logging.info(f"Stopping timer for {processor.__class__.__name__}...")
                         processor.stop_real_time_timer()
-                    if hasattr(processor, "stop_progress_tracking"):
-                        logging.info(f"Stopping progress tracking for {processor.__class__.__name__}...")
-                        processor.stop_progress_tracking()
 
             if self.claim_manager:
                 logging.info("Saving claims cache...")
@@ -125,12 +109,59 @@ class DataService:
             logging.error(f"Error during DataService stop: {e}")
 
     def _run(self, username, password, region, player_name):
-        """Main thread function - completely refactored to use processors."""
+        """
+        Main thread function - refactored for improved maintainability.
+
+        Orchestrates the initialization process through focused methods:
+        """
         thread_start_time = time.time()
         logging.info(f"[DataService] Starting service thread for player: {player_name}")
 
         try:
-            # Authenticate and setup connection
+            if not self._authenticate_user(username, password):
+                return
+
+            if not self._establish_connection(region):
+                return
+
+            reference_data, all_claims, current_claim = self._initialize_player_and_claims(player_name)
+            if not reference_data:
+                return
+
+            if not self._setup_services_and_processors(reference_data):
+                return
+
+            if not self._start_subscriptions():
+                return
+
+            total_startup_time = time.time() - thread_start_time
+            logging.info(f"[DataService] Service ready! Total startup time: {total_startup_time:.3f}s")
+            logging.info("[DataService] Monitoring for data updates...")
+
+            # Keep thread alive
+            while not self._stop_event.is_set():
+                time.sleep(1)
+
+        except Exception as e:
+            logging.error(f"[DataService] Error in data thread: {e}", exc_info=True)
+            self.data_queue.put({"type": "error", "data": f"Connection error: {e}"})
+        finally:
+            if self.client:
+                self.client.close_websocket()
+            logging.info("[DataService] Thread stopped and connection closed.")
+
+    def _authenticate_user(self, username, password):
+        """
+        Authenticate user credentials with the BitCraft API.
+
+        Args:
+            username: User's login username
+            password: User's login password
+
+        Returns:
+            bool: True if authentication succeeded, False otherwise
+        """
+        try:
             auth_start = time.time()
             logging.debug(f"[DataService] Starting authentication for {username[:3]}***")
 
@@ -139,32 +170,75 @@ class DataService:
                 self.data_queue.put(
                     {"type": "connection_status", "data": {"status": "failed", "reason": "Authentication failed"}}
                 )
-                return
+                return False
 
             auth_time = time.time() - auth_start
             logging.debug(f"[DataService] Authentication completed in {auth_time:.3f}s")
+            return True
 
+        except Exception as e:
+            logging.error(f"[DataService] Authentication error: {e}")
+            self.data_queue.put(
+                {"type": "connection_status", "data": {"status": "failed", "reason": f"Authentication error: {e}"}}
+            )
+            return False
+
+    def _establish_connection(self, region):
+        """
+        Establish WebSocket connection to the game servers.
+
+        Args:
+            region: Game region to connect to
+
+        Returns:
+            bool: True if connection succeeded, False otherwise
+        """
+        try:
             # Set region and connection details
             self.client.set_region(region)
             self.client.set_endpoint("subscribe")
             self.client.set_websocket_uri()
             logging.debug(f"[DataService] Connection configured for region: {region}")
 
-            # Connect WebSocket
-            try:
-                ws_start = time.time()
-                logging.debug("[DataService] Attempting WebSocket connection")
-                self.client.connect_websocket()
-                ws_time = time.time() - ws_start
-                logging.debug(f"[DataService] WebSocket connection established in {ws_time:.3f}s")
-                self.data_queue.put({"type": "connection_status", "data": {"status": "connected"}})
-            except Exception as e:
-                logging.error(f"[DataService] WebSocket connection failed: {e}")
-                self.data_queue.put({"type": "connection_status", "data": {"status": "failed", "reason": str(e)}})
-                return
+            # Test basic connectivity first
+            logging.debug("[DataService] Testing server connectivity...")
+            if not self.client.test_server_connectivity():
+                # Run full diagnostics if basic connectivity fails
+                logging.debug("[DataService] Running connection diagnostics...")
+                self.client.diagnose_connection_issues()
 
+                error_msg = "Server connectivity test failed. Check your internet connection and try again."
+                logging.error(f"[DataService] {error_msg}")
+                self.data_queue.put({"type": "connection_status", "data": {"status": "failed", "reason": error_msg}})
+                return False
+
+            # Connect WebSocket with retry logic
+            ws_start = time.time()
+            logging.debug("[DataService] Attempting WebSocket connection with retry")
+            self.client.connect_websocket_with_retry(max_retries=3, base_delay=2.0)
+            ws_time = time.time() - ws_start
+            logging.debug(f"[DataService] WebSocket connection established in {ws_time:.3f}s")
+            self.data_queue.put({"type": "connection_status", "data": {"status": "connected"}})
+            return True
+
+        except Exception as e:
+            logging.error(f"[DataService] WebSocket connection failed after retries: {e}")
+            self.data_queue.put({"type": "connection_status", "data": {"status": "failed", "reason": str(e)}})
+            return False
+
+    def _initialize_player_and_claims(self, player_name):
+        """
+        Initialize player instance and fetch all user claims.
+
+        Args:
+            player_name: Name of the player to initialize
+
+        Returns:
+            tuple: (reference_data, all_claims, current_claim) or (None, None, None) on failure
+        """
+        try:
             # Set player
-            self.player = self.PlayerClass(player_name)
+            self.player = Player(player_name)
             logging.debug(f"[DataService] Player instance created: {player_name}")
 
             # Load reference data
@@ -174,7 +248,7 @@ class DataService:
             if not reference_data:
                 logging.error("[DataService] Failed to load game reference data")
                 self.data_queue.put({"type": "error", "data": "Failed to load game reference data"})
-                return
+                return None, None, None
 
             ref_time = time.time() - ref_start
             logging.debug(f"[DataService] Reference data loaded in {ref_time:.3f}s")
@@ -186,16 +260,13 @@ class DataService:
             if not user_id:
                 logging.error(f"[DataService] Could not retrieve user ID for {player_name}.")
                 self.data_queue.put({"type": "error", "data": f"Could not find player: {player_name}"})
-                return
+                return None, None, None
             self.player.user_id = user_id
             user_time = time.time() - user_start
             logging.debug(f"[DataService] User ID retrieved in {user_time:.3f}s")
 
             # Initialize claim manager
             logging.debug("[DataService] Initializing claim manager")
-            from ..services.claim_service import ClaimService
-            from ..client.query_service import QueryService
-
             query_service = QueryService(self.client)
             self.claim_manager = ClaimService(self.client, query_service)
 
@@ -206,7 +277,7 @@ class DataService:
             if not all_claims:
                 logging.error(f"[DataService] No claims found for user {player_name}.")
                 self.data_queue.put({"type": "error", "data": f"No claims found for player: {player_name}"})
-                return
+                return None, None, None
 
             claims_time = time.time() - claims_start
             logging.info(f"[DataService] Found {len(all_claims)} claims in {claims_time:.3f}s")
@@ -234,22 +305,34 @@ class DataService:
             current_claim = self.claim_manager.get_current_claim()
             if not current_claim:
                 self.data_queue.put({"type": "error", "data": "No current claim available"})
-                return
+                return None, None, None
 
             logging.info(f"[DataService] Setting active claim: {current_claim.get('name', 'Unknown')}")
-            self.claim = self.ClaimClass(
+            self.claim = Claim(
                 client=self.client,
                 reference_data=reference_data,
             )
             self.claim.claim_id = current_claim["entity_id"]
 
-            # Initialize services for processors
-            from ..services.inventory_service import InventoryService
-            from ..services.passive_crafting_service import PassiveCraftingService
-            from ..services.traveler_tasks_service import TravelerTasksService
-            from ..services.active_crafting_service import ActiveCraftingService
-            from ..services.compare_jobs_service import CompareJobsService
+            return reference_data, all_claims, current_claim
 
+        except Exception as e:
+            logging.error(f"[DataService] Error initializing player and claims: {e}")
+            self.data_queue.put({"type": "error", "data": f"Player/claims initialization error: {e}"})
+            return None, None, None
+
+    def _setup_services_and_processors(self, reference_data):
+        """
+        Initialize all services, processors, and message routing.
+
+        Args:
+            reference_data: Game reference data dictionary
+
+        Returns:
+            bool: True if setup succeeded, False otherwise
+        """
+        try:
+            # Initialize services for processors
             inventory_service = InventoryService(bitcraft_client=self.client, claim_instance=self.claim)
             passive_crafting_service = PassiveCraftingService(
                 bitcraft_client=self.client,
@@ -279,6 +362,10 @@ class DataService:
             self.active_crafting_service = active_crafting_service
             self.compare_jobs_service = compare_jobs_service
 
+            # Initialize shared utilities
+            item_lookup_service = ItemLookupService(reference_data)
+            logging.debug(f"[DataService] ItemLookupService initialized with {item_lookup_service.get_stats()}")
+
             # Initialize processors and message router (subscription-based architecture only)
             services = {
                 "claim_manager": self.claim_manager,
@@ -289,6 +376,7 @@ class DataService:
                 "traveler_tasks_service": traveler_tasks_service,
                 "active_crafting_service": active_crafting_service,
                 "compare_jobs_service": compare_jobs_service,
+                "item_lookup_service": item_lookup_service,
                 "data_service": self,
             }
 
@@ -309,31 +397,32 @@ class DataService:
                 if hasattr(processor, "start_real_time_timer"):
                     processor.start_real_time_timer(self._handle_timer_update)
 
-                # Start timer for active crafting processor
-                if hasattr(processor, "start_progress_tracking"):
-                    processor.start_progress_tracking(self._handle_timer_update)
+            return True
 
-            # Set up subscriptions for the current claim (same as before)
+        except Exception as e:
+            logging.error(f"[DataService] Error setting up services and processors: {e}")
+            self.data_queue.put({"type": "error", "data": f"Services setup error: {e}"})
+            return False
+
+    def _start_subscriptions(self):
+        """
+        Start data subscriptions for the current claim.
+
+        Returns:
+            bool: True if subscriptions started successfully, False otherwise
+        """
+        try:
             setup_start = time.time()
             logging.info("[DataService] Setting up data subscriptions...")
             self._setup_subscriptions_for_current_claim()
             setup_time = time.time() - setup_start
-
-            total_startup_time = time.time() - thread_start_time
-            logging.info(f"[DataService] Service ready! Total startup time: {total_startup_time:.3f}s")
-            logging.info("[DataService] Monitoring for data updates...")
-
-            # Keep thread alive
-            while not self._stop_event.is_set():
-                time.sleep(1)
+            logging.debug(f"[DataService] Subscriptions setup completed in {setup_time:.3f}s")
+            return True
 
         except Exception as e:
-            logging.error(f"[DataService] Error in data thread: {e}", exc_info=True)
-            self.data_queue.put({"type": "error", "data": f"Connection error: {e}"})
-        finally:
-            if self.client:
-                self.client.close_websocket()
-            logging.info("[DataService] Thread stopped and connection closed.")
+            logging.error(f"[DataService] Error starting subscriptions: {e}")
+            self.data_queue.put({"type": "error", "data": f"Subscriptions setup error: {e}"})
+            return False
 
     def _handle_timer_update(self, timer_data):
         """Handle real-time timer updates from the crafting service"""
@@ -342,21 +431,22 @@ class DataService:
         except Exception as e:
             logging.error(f"Error handling timer update: {e}")
 
-    def _setup_subscriptions_for_current_claim(self):
+    def _setup_subscriptions_for_current_claim(self, context="startup"):
         """
         Sets up subscriptions for the currently active claim using query service.
         All data comes through subscriptions - no one-off queries.
+
+        Args:
+            context: "startup" for initial app startup, "refresh" for claim refresh
         """
         try:
             logging.debug("[DataService] _setup_subscriptions_for_current_claim() called")
-            
+
             if not self.claim.claim_id or not self.player.user_id:
                 logging.warning("[DataService] No claim ID or user ID available for subscriptions")
                 return
 
             # Use query service to get all subscription queries
-            from ..client.query_service import QueryService
-
             query_service = QueryService(self.client)
             all_subscriptions = query_service.get_subscription_queries(self.player.user_id, self.claim.claim_id)
 
@@ -364,7 +454,7 @@ class DataService:
             for i, query in enumerate(all_subscriptions):
                 logging.debug(f"[DataService] Subscription {i+1}: {query[:50]}...")
 
-            # Start subscriptions - ROUTE TO MESSAGE ROUTER
+            # Start subscriptions - route to message router
             if all_subscriptions:
                 logging.debug("[DataService] Starting subscription listener with message router")
                 self.client.start_subscription_listener(all_subscriptions, self.message_router.handle_message)
@@ -428,7 +518,7 @@ class DataService:
 
             # Update claim instance
             reference_data = self.client.load_full_reference_data()
-            self.claim = self.ClaimClass(
+            self.claim = Claim(
                 client=self.client,
                 reference_data=reference_data,
             )
@@ -446,7 +536,7 @@ class DataService:
                 processor.claim = self.claim
 
             # Restart subscriptions for new claim (this automatically replaces existing subscriptions)
-            self._setup_subscriptions_for_current_claim()
+            self._setup_subscriptions_for_current_claim(context="claim_switch")
 
             # Notify UI that claim switching completed successfully
             self.data_queue.put(
@@ -479,7 +569,7 @@ class DataService:
         """Refresh all data for the current claim by restarting subscriptions."""
         try:
             logging.debug("[DataService] refresh_current_claim_data() called")
-            
+
             if not self.claim or not self.claim.claim_id:
                 logging.warning("[DataService] No current claim available for data refresh")
                 return False
@@ -500,7 +590,7 @@ class DataService:
 
             # Restart subscriptions for current claim (this will fetch all fresh data)
             logging.debug("[DataService] Restarting subscriptions for fresh data")
-            self._setup_subscriptions_for_current_claim()
+            self._setup_subscriptions_for_current_claim(context="refresh")
             logging.debug("[DataService] Subscriptions restarted successfully")
 
             logging.info("[DataService] Current claim data refresh completed successfully")

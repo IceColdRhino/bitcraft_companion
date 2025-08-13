@@ -30,16 +30,6 @@ class TravelerTasksService:
 
         logging.info(f"TravelerTasksService initialized with {len(self.item_descriptions)} items for required items lookup")
 
-    def get_subscription_queries(self) -> List[str]:
-        """Returns SQL query strings for subscribing to traveler task updates."""
-        if not self.player.user_id:
-            logging.warning("Cannot create task subscriptions without player user_id")
-            return []
-
-        # Subscribe to task state changes for this player
-        query = f"SELECT * FROM traveler_task_state WHERE player_entity_id = '{self.player.user_id}';"
-        logging.info(f"Generated task subscription query for player {self.player.user_id}")
-        return [query]
 
     def get_all_tasks_data_grouped(self) -> List[Dict]:
         """

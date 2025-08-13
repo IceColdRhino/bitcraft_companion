@@ -278,7 +278,7 @@ class LoginWindow(ctk.CTk):
                     self.login_button.configure(state="normal")
                     # If auth failed with a token, it might be expired.
                     if self.auth_token_exists:
-                        self.status_label.configure(text="Login failed. Token may be expired.")
+                        self.status_label.configure(text="Login failed. Token may be expired. Try logging into BitCraft first.")
             else:
                 self.data_service.data_queue.put(message)
                 self.after(100, self.check_connection_status)

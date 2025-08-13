@@ -395,42 +395,67 @@ class ActiveCraftingTab(ctk.CTkFrame):
 
         sort_key = self.sort_column.lower().replace(" ", "_")
 
-        # Special sorting for progress - convert to numerical value for proper sorting
+        # Special sorting for remaining effort - handle READY, numeric values with commas
         if sort_key == "remaining_effort":
 
             def progress_sort_key(x):
-                progress_str = str(x.get(sort_key, ""))
+                progress_str = str(x.get(sort_key, "")).strip()
+                
+                # Handle "READY" - should sort first (0 remaining effort)
+                if progress_str.upper() == "READY":
+                    return 0
+                
+                # Handle "Preparation" - should sort last as it hasn't started
+                if progress_str.lower() == "preparation":
+                    return 999999
+                
+                # Handle numeric values (possibly with commas like "5,696")
+                try:
+                    # Remove commas and convert to int
+                    numeric_value = int(progress_str.replace(",", ""))
+                    return numeric_value
+                except ValueError:
+                    pass
+                
+                # Handle fraction format like "current/total"
                 if "/" in progress_str:
-                    # Handle current_effort/total_effort format (e.g., "24050/24050")
                     try:
                         parts = progress_str.split("/")
                         if len(parts) == 2:
-                            current = int(parts[0])
-                            total = int(parts[1])
+                            current = int(parts[0].replace(",", ""))
+                            total = int(parts[1].replace(",", ""))
                             if total > 0:
-                                return (current / total) * 100  # Convert to percentage for sorting
+                                # Return remaining effort (total - current)
+                                return total - current
                             else:
                                 return 0
-                        else:
-                            return 999
                     except ValueError:
-                        return 999
-                elif "%" in progress_str:
-                    # Handle legacy percentage format
+                        pass
+                
+                # Handle percentage format
+                if "%" in progress_str:
                     try:
-                        return int(progress_str.replace("%", ""))
+                        percentage = int(progress_str.replace("%", ""))
+                        # Convert percentage to remaining effort (100% = 0 remaining)
+                        return 100 - percentage
                     except ValueError:
-                        return 999
-                elif progress_str.lower() == "preparation":
-                    return -1  # Preparation comes first
-                else:
-                    return 999  # Unknown progress comes last
+                        pass
+                
+                # Unknown formats sort to middle
+                return 500000
 
             self.filtered_data.sort(key=progress_sort_key, reverse=self.sort_reverse)
         elif sort_key in ["tier", "quantity"]:
-            # Numeric sorting
+            # Numeric sorting with mixed type handling
+            def safe_numeric_sort_key(x):
+                value = x.get(sort_key, 0)
+                try:
+                    return float(value)
+                except (ValueError, TypeError):
+                    return 0  # Default for non-numeric values
+            
             self.filtered_data.sort(
-                key=lambda x: float(x.get(sort_key, 0)),
+                key=safe_numeric_sort_key,
                 reverse=self.sort_reverse,
             )
         else:

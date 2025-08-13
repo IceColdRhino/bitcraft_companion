@@ -1,0 +1,98 @@
+name: Dev Branch Validation
+
+on:
+  push:
+    branches: [ dev ]
+
+jobs:
+  validate-merge:
+    name: Validate Dev Merge
+    runs-on: windows-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Extract version
+      id: version
+      run: |
+        $VERSION = (Select-String -Path "pyproject.toml" -Pattern 'version = "([^"]+)"').Matches[0].Groups[1].Value
+        Write-Host "Current version: $VERSION"
+        echo "version=$VERSION" >> $env:GITHUB_OUTPUT
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: latest
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+        installer-parallel: true
+
+    - name: Add Poetry to PATH and Configure
+      run: |
+        $env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"
+        [Environment]::SetEnvironmentVariable("PATH", $env:PATH, [EnvironmentVariableTarget]::Process)
+        poetry config virtualenvs.create true
+        poetry config virtualenvs.in-project true
+
+    - name: Cache dependencies
+      uses: actions/cache@v4
+      with:
+        path: .venv
+        key: venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+
+    - name: Install dependencies
+      run: |
+        $env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"
+        poetry install
+
+    - name: Run tests
+      run: |
+        $env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"
+        Write-Host "Running full test suite on dev merge..."
+        poetry run pytest tests/ -v --tb=short
+
+    - name: Test build process
+      run: |
+        $env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"
+        Write-Host "Validating build process..."
+        Write-Host "Current directory: $(Get-Location)"
+        Write-Host "Checking for spec file..."
+        if (Test-Path "bitcraft_companion.spec") {
+          Write-Host "Found bitcraft_companion.spec"
+        } else {
+          Write-Host "bitcraft_companion.spec not found in current directory"
+          Write-Host "Files in current directory:"
+          Get-ChildItem | Select-Object Name
+          exit 1
+        }
+        $env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"
+        poetry add --group dev pyinstaller
+        $env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"
+        poetry run python -m PyInstaller --clean bitcraft_companion.spec
+
+    - name: Verify build
+      run: |
+        if (Test-Path "dist\*.exe") {
+          $exe = Get-ChildItem "dist\*.exe" | Select-Object -First 1
+          Write-Host "Build validation successful!"
+          Write-Host "Executable: $($exe.Name)"
+          Write-Host "Size: $([math]::Round($exe.Length/1MB, 2)) MB"
+        } else {
+          Write-Host "Build validation failed - no executable found"
+          exit 1
+        }
+
+    - name: Dev validation summary
+      run: |
+        Write-Host ""
+        Write-Host "Dev branch validation completed successfully!"
+        Write-Host "Tests passed"
+        Write-Host "Build validated"
+        Write-Host "Version: ${{ steps.version.outputs.version }}"
+        Write-Host ""
+        Write-Host "Ready for release when merged to master!"

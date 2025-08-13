@@ -13,17 +13,6 @@ class InventoryService:
         self.client = bitcraft_client
         self.claim = claim_instance
 
-    def get_subscription_queries(self, building_ids: List[str]) -> List[str]:
-        """
-        Returns a list of SQL query strings for subscribing to inventory updates
-        for a specific list of buildings.
-        """
-        if not building_ids:
-            return []  # Return an empty list if there are no buildings
-
-        # Generate a separate SELECT query for each building ID
-        logging.info(f"Generating FIXED inventory subscription queries for {len(building_ids)} buildings.")
-        return [f"SELECT * FROM inventory_state WHERE owner_entity_id = '{bid}';" for bid in building_ids]
 
     def initialize_full_inventory(self):
         """
