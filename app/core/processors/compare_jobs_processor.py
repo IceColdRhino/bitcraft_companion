@@ -20,8 +20,7 @@ class CompareJobsProcessor(BaseProcessor):
     def get_table_names(self):
         """Return list of table names this processor handles."""
         return [
-            "progressive_action_state",
-            "building_state",
+            "buy_order_state",
             "sell_order_state",
             "character_stats_state",
             "inventory_state",
@@ -43,6 +42,18 @@ class CompareJobsProcessor(BaseProcessor):
             for update in updates:
                 inserts = update.get("inserts", [])
                 deletes = update.get("deletes", [])
+
+                # TODO
+                # Handle buy_order_state transactions
+
+                # TODO
+                # Handle sell_order_state transactions
+
+                # TODO
+                # Handle character_stats_state transactions
+
+                # TODO
+                # Handle toolbelt-specific inventory_state transactions
 
         except Exception as e:
             logging.error(f"Error handling compare jobs transaction: {e}")
@@ -69,14 +80,10 @@ class CompareJobsProcessor(BaseProcessor):
                 return
 
             # Handle different table types
-            if table_name == "progressive_action_state":
-                self._process_progressive_action_data(table_rows)
-            elif table_name == "building_state":
-                self._process_building_data(table_rows)
+            if table_name == "buy_order_state":
+                self._process_buy_order_data(table_rows)
             elif table_name == "sell_order_state":
-                # TODO
-                #logging.info(f"TEMP - Sell Order State: {table_update}")
-                ...
+                self._process_sell_order_data(table_rows)
             elif table_name == "character_stats_state":
                 # TODO
                 # Look up Character State Type bindings to find meaning of "Values" field
@@ -94,80 +101,59 @@ class CompareJobsProcessor(BaseProcessor):
         except Exception as e:
             logging.error(f"Error handling compare jobs subscription: {e}")
 
-    def _process_progressive_action_data(self, action_rows):
-        """Process progressive_action_state data to store compare jobs operations."""
+    def _process_buy_order_data(self, buy_order_rows):
+        """Process buy_order_state data to store buy order info"""
         try:
-            # Store action data keyed by entity_id
-            if not hasattr(self, "_progressive_action_data"):
-                self._progressive_action_data = {}
+            if not hasattr(self, "_buy_order_data"):
+                self._buy_order_data = {}
 
-            # DEBUG: Track target building during subscription processing
-            target_building = 360287970282671066
-            found_target_in_subscription = False
-            all_building_ids_in_subscription = set()
-
-            for row in action_rows:
-                entity_id = row.get("entity_id")
-                building_id = row.get("building_entity_id")
-                owner_id = row.get("owner_entity_id")
-
-                # DEBUG: Track all buildings in subscription data
-                if building_id:
-                    all_building_ids_in_subscription.add(building_id)
-
-                # DEBUG: Check if target building is in subscription data
-                if building_id == target_building:
-                    found_target_in_subscription = True
-
-                if entity_id:
-                    self._progressive_action_data[entity_id] = {
-                        "entity_id": entity_id,
-                        "building_entity_id": building_id,
-                        "function_type": row.get("function_type"),
-                        "progress": row.get("progress"),
-                        "recipe_id": row.get("recipe_id"),
-                        "craft_count": row.get("craft_count"),
-                        "last_crit_outcome": row.get("last_crit_outcome"),
-                        "owner_entity_id": owner_id,
-                        "lock_expiration": row.get("lock_expiration"),
-                        "preparation": row.get("preparation", False),
-                    }
-
-        except Exception as e:
-            logging.error(f"Error processing progressive action data: {e}")
-
-
-    def _process_building_data(self, building_rows):
-        """Process building_state data to store building info."""
-        try:
-            # Store building data keyed by entity_id
-            if not hasattr(self, "_building_data"):
-                self._building_data = {}
-
-            for row in building_rows:
+            for row in buy_order_rows:
                 entity_id = row.get("entity_id")
                 if entity_id:
-                    self._building_data[entity_id] = {
-                        "building_description_id": row.get("building_description_id"),
-                        "claim_entity_id": row.get("claim_entity_id"),
-                        "entity_id": entity_id,
+                    self._buy_order_data[entity_id] = {
+                        "item_id": row.get("item_id"),
+                        "item_type": row.get("item_type"),
+                        "price_threshold": row.get("price_threshold"),
+                        "quantity": row.get("quantity")
                     }
-
         except Exception as e:
-            logging.error(f"Error processing building data: {e}")
+            logging.error(f"Error processing buy order data: {e}")
+    
+    def _process_sell_order_data(self, sell_order_rows):
+        """Process sell_order_state data to store sell order info"""
+        try:
+            if not hasattr(self, "_sell_order_data"):
+                self._sell_order_data = {}
+
+            for row in sell_order_rows:
+                entity_id = row.get("entity_id")
+                if entity_id:
+                    self._sell_order_data[entity_id] = {
+                        "item_id": row.get("item_id"),
+                        "item_type": row.get("item_type"),
+                        "price_threshold": row.get("price_threshold"),
+                        "quantity": row.get("quantity")
+                    }
+        except Exception as e:
+            logging.error(f"Error processing sell order data: {e}")
+
+    def _process_toolbelt_data(self, inventory_rows):
+        """Process inventory_state data to store toolbelt info"""
+        try:
+            if not hasattr(self, "_toolbelt_data"):
+                self._toolbelt_data = {}
+
+            for row in inventory_rows:
+                #logging.info(f"TEMP - Toolbelt Row: {row}")
+                ...
+        except Exception as e:
+            logging.error(f"Error processing toolbelt data: {e}")
 
     def _send_compare_jobs_update(self):
         """Send consolidated compare jobs update by combining all cached data."""
         try:
-            if not (hasattr(self, "_progressive_action_data") and self._progressive_action_data):
-                return
-
-            if not (hasattr(self, "_building_data") and self._building_data):
-                return
-
-            # Building nicknames are optional
-            if not hasattr(self, "_building_nicknames"):
-                self._building_nicknames = {}
+            # TODO
+            # Maybe some "return" catching if certain attributes don't exist?
 
             # Consolidate compare jobs by item
             consolidated_jobs = self._consolidate_compare_jobs()
@@ -183,7 +169,7 @@ class CompareJobsProcessor(BaseProcessor):
 
     def _consolidate_compare_jobs(self):
         """
-        Consolidate compare jobs data into 3-level hierarchy: Item -> Crafter -> Building/Progress.
+        Consolidate compare jobs data into hierarchy: Job -> ...?
 
         Returns:
             Dictionary with items consolidated in hierarchical structure
@@ -268,7 +254,7 @@ class CompareJobsProcessor(BaseProcessor):
 
     def _build_hierarchy(self, raw_operations):
         """
-        Build 1-level hierarchy from raw operations: Job -> ...?
+        Build hierarchy from raw operations: Job -> ...?
 
         Args:
             raw_operations: List of individual compare jobs operations
@@ -524,20 +510,13 @@ class CompareJobsProcessor(BaseProcessor):
         super().clear_cache()
 
         # Clear claim-specific cached data
-        if hasattr(self, "_progressive_action_data"):
-            self._progressive_action_data.clear()
+        # TODO
+        # Clear cached data
+        if hasattr(self, "_buy_order_data"):
+            self._buy_order_data.clear()
 
-        if hasattr(self, "_building_data"):
-            self._building_data.clear()
-
-        if hasattr(self, "_building_nicknames"):
-            self._building_nicknames.clear()
-
-        #if hasattr(self, "_claim_members"):
-        #    self._claim_members.clear()
-
-        #if hasattr(self, "_public_actions"):
-        #    self._public_actions.clear()
+        if hasattr(self, "_sell_order_data"):
+            self._sell_order_data.clear()
 
     def _get_item_name_from_recipe(self, recipe_id: int) -> str:
         """Get the actual item name from a recipe ID by looking up crafted_item_stacks."""

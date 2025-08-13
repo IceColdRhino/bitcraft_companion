@@ -161,6 +161,11 @@ class QueryService:
                 "WHERE building_state.claim_entity_id = '{claim_id}';".format(claim_id=claim_id)
             ),
             (
+                "SELECT buy_order_state.* "
+                "FROM buy_order_state "
+                "WHERE buy_order_state.claim_entity_id = '{claim_id}';".format(claim_id=claim_id)
+            ),
+            (
                 "SELECT sell_order_state.* "
                 "FROM sell_order_state "
                 "WHERE sell_order_state.claim_entity_id = '{claim_id}';".format(claim_id=claim_id)
