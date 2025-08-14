@@ -85,11 +85,7 @@ class CompareJobsProcessor(BaseProcessor):
             elif table_name == "sell_order_state":
                 self._process_sell_order_data(table_rows)
             elif table_name == "character_stats_state":
-                # TODO
-                # Look up Character State Type bindings to find meaning of "Values" field
-                # Generally, there's good Speed info here but not good Power info
-                #logging.info(f"TEMP - Character Stats State: {table_update}")
-                ...
+                self._process_character_stat_data(table_rows)
             elif table_name == "inventory_state":
                 self._process_toolbelt_data(table_rows)
 
@@ -134,6 +130,20 @@ class CompareJobsProcessor(BaseProcessor):
                     }
         except Exception as e:
             logging.error(f"Error processing sell order data: {e}")
+
+    def _process_character_stat_data(self,stat_rows):
+        """Process character_stats_state data to store character stat info"""
+        # TODO
+        # Look up Character State Type bindings to find meaning of "Values" field
+        # Generally, there's good Speed info here but not good Power info
+        try:
+            if not hasattr(self,"_character_stat_data"):
+                self.character_stat_data = {}
+
+            logging.info(f"TEMP - Character Stat Rows: {stat_rows}")
+        
+        except Exception as e:
+            logging.error(f"Error processing character stat data: {e}")
 
     def _process_toolbelt_data(self, inventory_rows):
         """Process inventory_state data to store toolbelt info"""
@@ -181,6 +191,8 @@ class CompareJobsProcessor(BaseProcessor):
             recipe_lookup = {r["id"]: r for r in self.reference_data.get("crafting_recipe_desc", [])}
 
             # Add crafting recipe info to list of raw_operations
+            # TODO: Get actual crafting speed values
+            craft_speed = 1.28
             for recipe in recipe_lookup.values():
                 job_id = f"craft_{recipe["id"]}"
 
@@ -192,16 +204,36 @@ class CompareJobsProcessor(BaseProcessor):
                 else:
                     job_passive = False
 
-                job_time = recipe["time_requirement"]
-                job_stamina = recipe["stamina_requirement"]
-                job_durability = recipe["tool_durability_lost"]
+                # TODO: Get actual skill speeds
+                # Temporary fallback value
+                skill_speed = 1.09
+
+                combined_speed = (craft_speed - 1)+skill_speed
+                # swing_speed is in [seconds/swing], as in the game
+                swing_speed = recipe["time_requirement"]/combined_speed
+
+                # TODO: Get actual tool powers
+                # Temporary fallback value
+                tool_power = 10
+
+                job_actions = recipe["actions_required"]
+
+                # FIXME
+                # Cludgy way of rounding up without importing math or numpy
+                # Potentially to be modified if either of those modules gets imported
+                total_swings = job_actions*swing_speed/tool_power
+                total_swings = total_swings if total_swings.is_integer() else int(total_swings)+1
+
+                job_time = recipe["time_requirement"]*total_swings
+                job_stamina = recipe["stamina_requirement"]*total_swings
+                job_durability = recipe["tool_durability_lost"]*total_swings
+
                 job_building = recipe["building_requirement"]
                 job_level = recipe["level_requirements"]
                 job_tool = recipe["tool_requirements"]
                 job_inputs = recipe["consumed_item_stacks"]
                 job_xp = recipe["experience_per_progress"]
                 job_outputs = recipe["crafted_item_stacks"]
-                job_actions = recipe["actions_required"]
                 job_hands = recipe["allow_use_hands"]
 
                 raw_operation = {
