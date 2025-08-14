@@ -76,7 +76,7 @@ class BitCraft:
                                     {
                                         "name": record.name,
                                         "level": logging.WARNING,
-                                        "msg": "WebSocket logging failed due to Unicode encoding issue",
+                                        "msg": "WebSocket logging failed due to Unicode encoding issue - some message details may be lost",
                                         "args": (),
                                     }
                                 )
@@ -86,10 +86,12 @@ class BitCraft:
             for handler in ws_logger.handlers[:]:
                 ws_logger.removeHandler(handler)
 
+            # prevents unicode encoding errors
             safe_handler = SafeStreamHandler()
-            safe_handler.setLevel(logging.DEBUG)
+            safe_handler.setLevel(logging.INFO)
+            # unicode-safe logging
             ws_logger.addHandler(safe_handler)
-            ws_logger.setLevel(logging.DEBUG)
+            ws_logger.setLevel(logging.INFO)
 
         except Exception as e:
             logging.warning(f"Failed to configure websockets logging: {e}")
@@ -169,18 +171,14 @@ class BitCraft:
                 logging.error(f"Unexpected error processing WebSocket message: {e}")
                 return
 
-        logging.warning(f"Timed out waiting for response to query with message_id: {message_id}")
+        logging.warning(f"Query timeout after {timeout_seconds}s for message_id: {message_id} - server may be slow or unresponsive")
 
     def _get_credential_from_keyring(self, key_name: str) -> str | None:
         try:
             credential = keyring.get_password(self.SERVICE_NAME, key_name)
-            if credential:
-                logging.debug(f"Credential '{key_name}' loaded from keyring.")
-            else:
-                logging.debug(f"Credential '{key_name}' not found in keyring.")
             return credential
         except keyring.errors.NoKeyringError:
-            logging.warning("No keyring backend found. Credentials will not be securely stored.")
+            logging.warning("No keyring backend found - credentials will not be securely stored. Consider installing a keyring backend.")
             return None
         except Exception as e:
             logging.error(f"Error retrieving '{key_name}' from keyring: {e}")
@@ -189,84 +187,20 @@ class BitCraft:
     def _set_credential_in_keyring(self, key_name: str, value: str):
         try:
             keyring.set_password(self.SERVICE_NAME, key_name, value)
-            logging.debug(f"Credential '{key_name}' stored in keyring.")
         except keyring.errors.NoKeyringError:
-            logging.warning("No keyring backend found. Cannot securely store credentials.")
+            logging.warning("No keyring backend found. Cannot securely store credentials - they will be lost on restart.")
         except Exception as e:
             logging.error(f"Error storing '{key_name}' in keyring: {e}")
 
     def _delete_credential_from_keyring(self, key_name: str):
         try:
             keyring.delete_password(self.SERVICE_NAME, key_name)
-            logging.debug(f"Credential '{key_name}' deleted from keyring.")
         except keyring.errors.NoKeyringError:
-            logging.warning("No keyring backend found. Cannot delete credentials.")
+            logging.warning("No keyring backend found. Cannot delete credentials from secure storage.")
         except keyring.errors.PasswordDeleteError:
             logging.warning(f"Credential '{key_name}' not found in keyring to delete.")
         except Exception as e:
             logging.error(f"Error deleting '{key_name}' from keyring: {e}")
-
-    def _load_reference_data(self, table: str) -> list[dict] | None:
-        if table == "player_data":
-            file_path = get_user_data_path("player_data.json")
-            try:
-                with open(file_path, "r") as f:
-                    return json.load(f)
-            except Exception as e:
-                logging.error(f"Error loading player_data.json: {e}")
-                return None
-
-        db_path = get_bundled_data_path("data.db")
-        try:
-            conn = sqlite3.connect(db_path)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute(f"SELECT * FROM {table}")
-            rows = cursor.fetchall()
-            result = [dict(row) for row in rows]
-            for row in result:
-                for field, value in row.items():
-                    if isinstance(value, str) and value.strip():
-                        try:
-                            row[field] = json.loads(value)
-                        except (json.JSONDecodeError, ValueError):
-                            pass
-            conn.close()
-            return result
-        except Exception as e:
-            logging.error(f"Error loading reference data from DB for table {table}: {e}")
-            return None
-
-    def load_full_reference_data(self) -> dict:
-        """
-        Loads all required reference data tables into a single dictionary.
-
-        Returns:
-            dict: Dictionary containing all reference data tables
-        """
-        reference_tables = [
-            "resource_desc",
-            "item_desc",
-            "cargo_desc",
-            "building_desc",
-            "type_desc_ids",
-            "building_types",
-            "crafting_recipe_desc",
-            "claim_tile_cost",
-            "traveler_desc",
-        ]
-
-        reference_data = {}
-        for table in reference_tables:
-            data = self._load_reference_data(table)
-            if data is not None:
-                reference_data[table] = data
-                logging.info(f"Loaded reference data for table: {table}")
-            else:
-                logging.warning(f"Failed to load reference data for table: {table}")
-
-        logging.info(f"Loaded reference data for {len(reference_data)} tables")
-        return reference_data
 
     def update_user_data_file(self, key: str, value: str):
         file_path = get_user_data_path("player_data.json")
@@ -331,10 +265,9 @@ class BitCraft:
             if results and isinstance(results, list) and len(results) > 0:
                 user_id = results[0].get("entity_id")
                 if user_id:
-                    logging.info(f"Successfully found user ID for {username}: {user_id}")
                     return user_id
 
-            logging.warning(f"Query for username '{username}' returned no results.")
+            logging.warning(f"Query for username '{username}' returned no results - user may not exist or database may be out of sync")
             return None
         except Exception as e:
             logging.error(f"An unexpected error occurred in fetch_user_id_by_username: {e}")
@@ -355,7 +288,7 @@ class BitCraft:
         try:
             response = requests.post(uri)
             response.raise_for_status()
-            logging.info("Access Code request was successful! Check your email for the code.")
+            logging.info("Access code sent! Check your email for the verification code.")
             return True
         except requests.exceptions.HTTPError as http_err:
             logging.error(f"HTTP error requesting access code: {http_err} - {response.text}")
@@ -383,7 +316,7 @@ class BitCraft:
             self._set_credential_in_keyring("email", email)
             self.auth = f"Bearer {authorization_token}"
             self.email = email
-            logging.info(f"Authorization token received! {self.auth[:15]}...")
+            logging.info("Authentication successful!")
             return self.auth
         except requests.exceptions.HTTPError as http_err:
             logging.error(f"HTTP error requesting authorization token: {http_err} - {response.text}")
@@ -650,7 +583,6 @@ class BitCraft:
                 daemon=True,
             )
             self.subscription_thread.start()
-            logging.info("Subscription listener thread started.")
 
     def stop_subscriptions(self):
         """
@@ -696,19 +628,8 @@ class BitCraft:
                     msg = self.ws_connection.recv(timeout=1.0)
                     data = json.loads(msg)
 
-                    # Log WebSocket message types for connection diagnostics
-                    message_type = list(data.keys())[0] if data else "unknown"
-                    logging.debug(f"[BitCraftClient] Received WebSocket message type: {message_type}")
-
-                    # Add detailed logging for specific message types
-                    if "TransactionUpdate" in data:
-                        reducer_name = data.get("TransactionUpdate", {}).get("reducer_call", {}).get("reducer_name", "unknown")
-                        status_keys = list(data.get("TransactionUpdate", {}).get("status", {}).keys())
-                        logging.debug(f"[BitCraftClient] TransactionUpdate - Reducer: {reducer_name}, Status: {status_keys}")
-
                     # Call the DataService callback with the message
                     callback(data)
-
                 except TimeoutError:
                     continue  # No message received, loop again
                 except json.JSONDecodeError as e:

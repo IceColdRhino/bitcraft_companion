@@ -102,6 +102,17 @@ class QueryService:
     def get_subscription_queries(self, user_id: str, claim_id: str) -> List[str]:
         """Get all subscription queries for a claim - matching your DataManager pattern."""
         queries = [
+            # Potentially one-time subs that will rarely change
+            ("SELECT * FROM resource_desc;"),
+            ("SELECT * FROM item_desc;"),
+            ("SELECT * FROM cargo_desc;"),
+            ("SELECT * FROM building_desc;"),
+            ("SELECT * FROM building_function_type_mapping_desc;"),
+            ("SELECT * FROM building_type_desc;"),
+            ("SELECT * FROM crafting_recipe_desc;"),
+            ("SELECT * FROM claim_tile_cost;"),
+            ("SELECT * FROM npc_desc;"),
+            # Noisy queries that benefit from JOIN to reduce data transfer
             # Get traveler tasks for player
             ("SELECT * FROM traveler_task_state WHERE player_entity_id = '{user_id}';".format(user_id=user_id)),
             # Get claim buildings

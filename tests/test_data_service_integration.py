@@ -210,12 +210,8 @@ class TestDataServiceAuthentication:
         capture_thread = threading.Thread(target=capture_messages, daemon=True)
         capture_thread.start()
 
-        # Patch service instantiation to avoid complex mocking
-        with patch("app.services.inventory_service.InventoryService"), patch(
-            "app.services.passive_crafting_service.PassiveCraftingService"
-        ), patch("app.services.traveler_tasks_service.TravelerTasksService"), patch(
-            "app.services.active_crafting_service.ActiveCraftingService"
-        ), patch(
+        # Patch service instantiation to avoid complex mocking (updated for processor architecture)
+        with patch(
             "app.services.claim_service.ClaimService"
         ) as mock_claim_service:
 
@@ -481,8 +477,7 @@ class TestClaimSwitching:
         # Set up required state
         data_service.claim = Mock()
         data_service.claim.claim_id = "test-claim-123"
-        data_service.player = Mock()
-        data_service.player.user_id = "test-user-456"
+        data_service.user_id = "test-user-456"  # Updated for refactored architecture
 
         # Mock message router with clear_all_processor_caches
         mock_message_router = Mock()

@@ -35,31 +35,10 @@ class ClaimInfoHeader(ctk.CTkFrame):
         self.traveler_tasks_expiration = None
         self.task_refresh_time = "Unknown"
 
-        # Load tile cost data from the app's data service
-        self.tile_cost_lookup = {}
-        self._load_tile_cost_data()
+        # Initialize tile cost lookup with default values
+        self.tile_cost_lookup = {1: 0.01, 1001: 0.0125}  # Default tile cost values
 
         self._create_widgets()
-
-    def _load_tile_cost_data(self):
-        """Load claim tile cost data for supplies calculation."""
-        try:
-            if hasattr(self.app, "data_service") and self.app.data_service and hasattr(self.app.data_service, "client"):
-                client = self.app.data_service.client
-                tile_cost_data = client._load_reference_data("claim_tile_cost")
-
-                if tile_cost_data:
-                    # Create lookup table: tile_count -> cost_per_tile
-                    for entry in tile_cost_data:
-                        tile_count = entry.get("tile_count", 0)
-                        cost_per_tile = entry.get("cost_per_tile", 0.0)
-                        self.tile_cost_lookup[tile_count] = cost_per_tile
-                    logging.info(f"Loaded {len(self.tile_cost_lookup)} tile cost entries")
-                else:
-                    logging.warning("No tile cost data found")
-        except Exception as e:
-            logging.error(f"Error loading tile cost data: {e}")
-            self.tile_cost_lookup = {1: 0.01, 1001: 0.0125}  # fallback values
 
     def _calculate_supplies_per_hour(self, tile_count):
         """

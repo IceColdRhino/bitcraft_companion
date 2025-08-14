@@ -1,26 +1,91 @@
 """
 Active crafting processor for handling progressive_action_state table updates.
+
+SpacetimeDB Table Structures:
+----------------------------
+
+progressive_action_state:
+    entity_id: int - Unique identifier for the crafting action
+    building_entity_id: int - ID of the building where crafting occurs
+    function_type: int - Type of crafting function
+    progress: int - Current progress value
+    recipe_id: int - ID of the recipe being crafted
+    craft_count: int - Number of items being crafted
+    last_crit_outcome: int - Last critical success outcome
+    owner_entity_id: int - ID of the player performing the craft
+    lock_expiration: list - Timestamp when craft lock expires
+    preparation: bool - Whether craft is in preparation phase
+
+public_progressive_action_state:
+    entity_id: int - Unique identifier
+    building_entity_id: int - ID of building accepting help
+    owner_entity_id: int - ID of the craft owner
+
+building_state:
+    entity_id: int - Unique building identifier
+    building_description_id: int - Type of building
+    claim_entity_id: int - ID of claim containing the building
+
+building_nickname_state:
+    entity_id: int - Building ID this nickname applies to
+    nickname: str - Custom name for the building
+
+claim_member_state:
+    claim_entity_id: int - ID of the claim
+    player_entity_id: int - ID of the player member
+    user_name: str - Display name of the player
 """
 
 import re
 import json
 import logging
 from .base_processor import BaseProcessor
+from app.models import ProgressiveActionState, PublicProgressiveActionState, BuildingState, ClaimMemberState
 
 
 class ActiveCraftingProcessor(BaseProcessor):
     """
-    Processes progressive_action_state table updates from SpacetimeDB.
+    Processes active crafting data from SpacetimeDB for real-time UI updates.
 
-    Handles both real-time transactions and batch subscription updates
-    for active crafting (progressive action) changes.
+    This processor handles multiple SpacetimeDB tables to provide comprehensive
+    active crafting information including:
+    - Progressive crafting operations and their progress
+    - Buildings accepting help (public_progressive_action_state)
+    - Building names and locations
+    - Player assistance detection and tracking
+
+    Architecture:
+    - Transaction processing: Real-time incremental updates for live progress
+    - Subscription processing: Batch updates for initial data loading
+    - Data consolidation: Combines all sources into hierarchical UI format
+    - Assistant detection: Tracks players helping with accept-help crafts
+
+    Data Flow:
+    1. SpacetimeDB → process_transaction/process_subscription
+    2. Raw data → _process_*_data methods (using data classes)
+    3. Cached data → _consolidate_active_crafting
+    4. UI format → _format_crafting_for_ui
+    5. UI update → active_crafting_update message
     """
 
     def __init__(self, data_queue, services, reference_data):
-        """Initialize the processor."""
-        super().__init__(data_queue, services, reference_data)
+        """
+        Initialize the active crafting processor.
 
-        # Store current active crafting data for reference
+        Args:
+            data_queue: Queue for sending processed data to UI
+            services: Dict of available services (item_lookup_service, etc.)
+            reference_data: Static game data (recipes, items, buildings)
+
+        Instance Variables:
+            current_active_crafting_data: Last sent UI data for progress tracking
+            _progressive_action_data: Dict[int, dict] - Active crafts by entity_id
+            _public_actions: Set[int] - Progressive action entity IDs accepting help
+            _building_data: Dict[int, dict] - Building info by entity_id
+            _building_nicknames: Dict[int, str] - Custom building names
+            _claim_members: Dict[str, str] - Player names by player_entity_id
+        """
+        super().__init__(data_queue, services, reference_data)
         self.current_active_crafting_data = []
 
     def get_table_names(self):
@@ -128,8 +193,6 @@ class ActiveCraftingProcessor(BaseProcessor):
                                                     self._trigger_active_craft_notification(recipe_id)
                                 except Exception as e:
                                     logging.error(f"Error checking active craft completion status: {e}")
-
-                            status_display = "Preparation" if preparation else f"{progress}%"
                         else:
                             # This is a new insert
                             recipe_id = insert_data.get("recipe_id", 0)
@@ -167,16 +230,23 @@ class ActiveCraftingProcessor(BaseProcessor):
                                 insert_data = insert_str
 
                             # Handle both array format [entity_id, building_entity_id, owner_entity_id] and object format
+                            progressive_action_entity_id = None
                             building_entity_id = None
-                            if isinstance(insert_data, list) and len(insert_data) > 1:
+                            
+                            if isinstance(insert_data, list) and len(insert_data) >= 3:
                                 # Array format: [entity_id, building_entity_id, owner_entity_id]
-                                building_entity_id = insert_data[1]  # building_entity_id is at position 1
+                                progressive_action_entity_id = insert_data[0]  # entity_id is the progressive action ID
+                                building_entity_id = insert_data[1]  # building_entity_id for reference
                             elif isinstance(insert_data, dict):
-                                # Object format: {"building_entity_id": value}
+                                # Object format: {"entity_id": value, "building_entity_id": value}
+                                progressive_action_entity_id = insert_data.get("entity_id")
                                 building_entity_id = insert_data.get("building_entity_id")
+                            else:
+                                logging.warning(f"Unexpected public_progressive_action_state insert format: {insert_data}")
+                                continue
 
-                            if building_entity_id:
-                                self._public_actions.add(building_entity_id)
+                            if progressive_action_entity_id:
+                                self._public_actions.add(progressive_action_entity_id)
 
                                 # Ensure building exists in building_data for accept help buildings
                                 if not hasattr(self, "_building_data"):
@@ -202,17 +272,22 @@ class ActiveCraftingProcessor(BaseProcessor):
                                 delete_data = delete_str
 
                             # Handle both array format [entity_id, building_entity_id, owner_entity_id] and object format
-                            building_entity_id = None
-                            if isinstance(delete_data, list) and len(delete_data) > 1:
+                            progressive_action_entity_id = None
+                            
+                            if isinstance(delete_data, list) and len(delete_data) >= 3:
                                 # Array format: [entity_id, building_entity_id, owner_entity_id]
-                                building_entity_id = delete_data[1]  # building_entity_id is at position 1
+                                progressive_action_entity_id = delete_data[0]  # entity_id is the progressive action ID
                             elif isinstance(delete_data, dict):
-                                # Object format: {"building_entity_id": value}
-                                building_entity_id = delete_data.get("building_entity_id")
+                                # Object format: {"entity_id": value}
+                                progressive_action_entity_id = delete_data.get("entity_id")
+                            else:
+                                logging.warning(f"Unexpected public_progressive_action_state delete format: {delete_data}")
+                                continue
 
-                            if building_entity_id and building_entity_id in self._public_actions:
-                                self._public_actions.remove(building_entity_id)
+                            if progressive_action_entity_id and progressive_action_entity_id in self._public_actions:
+                                self._public_actions.remove(progressive_action_entity_id)
                         except Exception as e:
+                            logging.warning(f"Failed to parse public_progressive_action_state delete, skipping: {e}")
                             logging.error(f"Error processing public action delete: {e}")
 
                     if inserts or deletes:
@@ -220,7 +295,6 @@ class ActiveCraftingProcessor(BaseProcessor):
 
                 # For other table types, do full refresh if we have changes
                 elif inserts or deletes:
-                    self._log_transaction_debug("progressive_action", len(inserts), len(deletes), reducer_name)
                     has_active_crafting_changes = True
 
             # Send incremental update for progressive_action_state and public_progressive_action_state, full refresh for others
@@ -228,7 +302,7 @@ class ActiveCraftingProcessor(BaseProcessor):
                 if table_name in ["progressive_action_state", "public_progressive_action_state"]:
                     self._send_incremental_active_crafting_update(reducer_name, timestamp)
                 else:
-                    logging.info(f"[ACTIVE_CRAFT_DEBUG] Sending full refresh for table: {table_name}")
+                    logging.debug(f"Sending full refresh for table: {table_name}")
                     self._refresh_active_crafting()
 
         except Exception as e:
@@ -274,119 +348,140 @@ class ActiveCraftingProcessor(BaseProcessor):
             logging.error(f"Error handling active crafting subscription: {e}")
 
     def _process_progressive_action_data(self, action_rows):
-        """Process progressive_action_state data to store active crafting operations."""
+        """Process progressive_action_state data using data classes."""
         try:
-            # Store action data keyed by entity_id
             if not hasattr(self, "_progressive_action_data"):
                 self._progressive_action_data = {}
 
-            # DEBUG: Track target building during subscription processing
-            target_building = 360287970282671066
-            found_target_in_subscription = False
-            all_building_ids_in_subscription = set()
-
             for row in action_rows:
-                entity_id = row.get("entity_id")
-                building_id = row.get("building_entity_id")
-                owner_id = row.get("owner_entity_id")
+                try:
+                    # Create ProgressiveActionState data class instance
+                    progressive_action = ProgressiveActionState(**row)
 
-                # DEBUG: Track all buildings in subscription data
-                if building_id:
-                    all_building_ids_in_subscription.add(building_id)
-
-                # DEBUG: Check if target building is in subscription data
-                if building_id == target_building:
-                    found_target_in_subscription = True
-
-                if entity_id:
-                    self._progressive_action_data[entity_id] = {
-                        "entity_id": entity_id,
-                        "building_entity_id": building_id,
-                        "function_type": row.get("function_type"),
-                        "progress": row.get("progress"),
-                        "recipe_id": row.get("recipe_id"),
-                        "craft_count": row.get("craft_count"),
-                        "last_crit_outcome": row.get("last_crit_outcome"),
-                        "owner_entity_id": owner_id,
-                        "lock_expiration": row.get("lock_expiration"),
-                        "preparation": row.get("preparation", False),
+                    # Store using entity_id as key, converting back to dict for compatibility
+                    self._progressive_action_data[progressive_action.entity_id] = {
+                        "entity_id": progressive_action.entity_id,
+                        "building_entity_id": progressive_action.building_entity_id,
+                        "function_type": progressive_action.function_type,
+                        "progress": progressive_action.progress,
+                        "recipe_id": progressive_action.recipe_id,
+                        "craft_count": progressive_action.craft_count,
+                        "last_crit_outcome": progressive_action.last_crit_outcome,
+                        "owner_entity_id": progressive_action.owner_entity_id,
+                        "lock_expiration": progressive_action.lock_expiration,
+                        "preparation": progressive_action.preparation,
                     }
+                except Exception as row_error:
+                    logging.warning(f"Failed to process progressive_action_state row, using fallback: {row_error}")
+                    # Try fallback parsing for essential fields
+                    try:
+                        entity_id = row.get("entity_id")
+                        building_entity_id = row.get("building_entity_id")
+                        if entity_id and building_entity_id:
+                            self._progressive_action_data[entity_id] = {
+                                "entity_id": entity_id,
+                                "building_entity_id": building_entity_id,
+                                "function_type": row.get("function_type", 0),
+                                "progress": row.get("progress", 0),
+                                "owner_entity_id": row.get("owner_entity_id", 0),
+                            }
+                        else:
+                            logging.warning(f"Progressive action row missing critical fields: {row}")
+                    except Exception:
+                        logging.warning(f"Cannot parse progressive action row at all, skipping: {row}")
+                    continue
 
         except Exception as e:
             logging.error(f"Error processing progressive action data: {e}")
 
     def _process_public_progressive_action_data(self, public_action_rows):
-        """Process public_progressive_action_state data to track which buildings accept help."""
+        """Process public_progressive_action_state data using data classes."""
         try:
-            # Initialize and clear the public actions set for fresh subscription data
             if not hasattr(self, "_public_actions"):
                 self._public_actions = set()
             else:
-                # Clear existing data since subscription updates contain the full current state
                 self._public_actions.clear()
 
-            all_public_building_ids = []
-
-            # Add all buildings that currently accept help
             for row in public_action_rows:
-                building_entity_id = row.get("building_entity_id")
-                if building_entity_id:
-                    self._public_actions.add(building_entity_id)
-                    all_public_building_ids.append(building_entity_id)
+                try:
+                    # Create PublicProgressiveActionState data class instance
+                    public_action = PublicProgressiveActionState(**row)
+                    # Track the progressive action entity ID, not the building ID
+                    self._public_actions.add(public_action.entity_id)
+                except Exception as row_error:
+                    logging.warning(f"Failed to process public_progressive_action_state row, using fallback: {row_error}")
+                    # Try fallback parsing
+                    try:
+                        entity_id = row.get("entity_id")
+                        if entity_id:
+                            self._public_actions.add(entity_id)
+                        else:
+                            logging.warning(f"Public action row missing entity_id: {row}")
+                    except Exception:
+                        logging.warning(f"Cannot parse public action row at all, skipping: {row}")
+                    continue
 
         except Exception as e:
             logging.error(f"Error processing public progressive action data: {e}")
 
     def _process_building_data(self, building_rows):
-        """Process building_state data to store building info."""
+        """Process building_state data using data classes."""
         try:
-            # Store building data keyed by entity_id
             if not hasattr(self, "_building_data"):
                 self._building_data = {}
 
             for row in building_rows:
-                entity_id = row.get("entity_id")
-                if entity_id:
-                    self._building_data[entity_id] = {
-                        "building_description_id": row.get("building_description_id"),
-                        "claim_entity_id": row.get("claim_entity_id"),
-                        "entity_id": entity_id,
+                try:
+                    # Create BuildingState data class instance
+                    building = BuildingState(**row)
+
+                    # Store using entity_id as key, converting back to dict for compatibility
+                    self._building_data[building.entity_id] = {
+                        "building_description_id": building.building_description_id,
+                        "claim_entity_id": building.claim_entity_id,
+                        "entity_id": building.entity_id,
                     }
+                except Exception as row_error:
+                    logging.debug(f"Failed to process building row: {row_error}")
+                    continue
 
         except Exception as e:
             logging.error(f"Error processing building data: {e}")
 
     def _process_building_nickname_data(self, nickname_rows):
-        """Process building_nickname_state data to store custom building names."""
+        """Process building_nickname_state data using data classes."""
         try:
-            # Store nickname data keyed by entity_id
             if not hasattr(self, "_building_nicknames"):
                 self._building_nicknames = {}
 
             for row in nickname_rows:
-                entity_id = row.get("entity_id")
-                nickname = row.get("nickname")
-                if entity_id and nickname:
-                    self._building_nicknames[entity_id] = nickname
+                try:
+                    # Process building nickname data directly (no dataclass available yet)
+                    entity_id = row.get("entity_id")
+                    nickname = row.get("nickname")
+                    if entity_id and nickname:
+                        self._building_nicknames[entity_id] = nickname
+                except Exception as row_error:
+                    logging.debug(f"Failed to process building nickname row: {row_error}")
+                    continue
 
         except Exception as e:
             logging.error(f"Error processing building nickname data: {e}")
 
     def _process_claim_member_data(self, member_rows):
-        """Process claim_member_state data to store player names for current claim members."""
+        """Process claim_member_state data using data classes."""
         try:
-            # Store member data keyed by player_entity_id
             if not hasattr(self, "_claim_members"):
                 self._claim_members = {}
 
             for row in member_rows:
-                claim_entity_id = row.get("claim_entity_id")
-                player_entity_id = row.get("player_entity_id")
-                user_name = row.get("user_name")
-
-                # Store all claim member data since the query service already filters by current claim
-                if player_entity_id and user_name:
-                    self._claim_members[str(player_entity_id)] = user_name
+                try:
+                    # Create ClaimMemberState data class instance
+                    member = ClaimMemberState(**row)
+                    self._claim_members[str(member.player_entity_id)] = member.user_name
+                except Exception as row_error:
+                    logging.debug(f"Failed to process claim member row: {row_error}")
+                    continue
 
         except Exception as e:
             logging.error(f"Error processing claim member data: {e}")
@@ -503,11 +598,13 @@ class ActiveCraftingProcessor(BaseProcessor):
                 # Display remaining effort
                 status_display = f"{remaining_effort:,}" if remaining_effort > 0 else "READY"
 
-                # Check if this building accepts help
-                accepts_help = "Yes" if hasattr(self, "_public_actions") and building_id in self._public_actions else "No"
+                # Check if this progressive action accepts help
+                accepts_help = "Yes" if hasattr(self, "_public_actions") and action_id in self._public_actions else "No"
 
                 # Get crafter name
                 crafter_name = self._get_player_name(owner_id)
+                if crafter_name == f"Player {owner_id}":
+                    logging.warning(f"Player name not found for ID {owner_id}, using fallback display name")
 
                 try:
                     # Process crafted items from this operation
@@ -552,7 +649,7 @@ class ActiveCraftingProcessor(BaseProcessor):
                             item_tier = item_info.get("tier", 0) if item_info else 0
                             item_tag = item_info.get("tag", "") if item_info else ""
                         else:
-                            logging.warning(f"Invalid item_stack format: {item_stack} - skipping")
+                            logging.warning(f"Invalid item_stack format in recipe {recipe_id}: {item_stack} - skipping item")
                             continue
 
                         # Create raw operation
@@ -575,7 +672,8 @@ class ActiveCraftingProcessor(BaseProcessor):
                         raw_operations.append(raw_operation)
 
                 except Exception as e:
-                    logging.error(f"[ACTIVE_CRAFT_DEBUG] Exception processing action {action_id} crafted items: {e}")
+                    logging.warning(f"Failed to process progressive action {action_id}, skipping from UI: {e}")
+                    logging.error(f"Exception processing action {action_id}: {e}")
                     continue
 
             # Now build the 3-level hierarchy
@@ -829,56 +927,34 @@ class ActiveCraftingProcessor(BaseProcessor):
 
     def _parse_progressive_action_state(self, data_str):
         """
-        Parse progressive_action_state from SpacetimeDB transaction format.
+        Parse progressive_action_state from SpacetimeDB transaction format using data class.
 
-        Format: [entity_id, building_entity_id, function_type, progress, recipe_id, craft_count, last_crit_outcome, owner_entity_id, [timestamp], preparation]
-        Example: [360287970279931013,360287970244316930,25,432,405009,50,1,504403158299523086,[1754348000362779],false]
+        Args:
+            data_str: Raw transaction data from SpacetimeDB
+
+        Returns:
+            Dict representation of ProgressiveActionState or None if parsing fails
         """
         try:
-            # First try JSON parsing since the data might already be parsed
-            if isinstance(data_str, str):
-                try:
-                    data = json.loads(data_str)
-                except json.JSONDecodeError:
-                    # Fall back to ast.literal_eval for Python literal strings
-                    import ast
-
-                    data = ast.literal_eval(data_str)
-            else:
-                # Data is already parsed (likely from JSON)
-                data = data_str
-
-            if not isinstance(data, list) or len(data) < 10:
-                return None
-
-            # Extract values based on progressive_action_state structure
-            entity_id = data[0]  # Position 0: entity_id
-            building_entity_id = data[1]  # Position 1: building_entity_id
-            function_type = data[2]  # Position 2: function_type
-            progress = data[3]  # Position 3: progress
-            recipe_id = data[4]  # Position 4: recipe_id
-            craft_count = data[5]  # Position 5: craft_count
-            last_crit_outcome = data[6]  # Position 6: last_crit_outcome
-            owner_entity_id = data[7]  # Position 7: owner_entity_id
-            lock_expiration = data[8]  # Position 8: lock_expiration (timestamp array)
-            preparation = data[9]  # Position 9: preparation
-
-            parsed_data = {
-                "entity_id": entity_id,
-                "building_entity_id": building_entity_id,
-                "function_type": function_type,
-                "progress": progress,
-                "recipe_id": recipe_id,
-                "craft_count": craft_count,
-                "last_crit_outcome": last_crit_outcome,
-                "owner_entity_id": owner_entity_id,
-                "lock_expiration": lock_expiration,
-                "preparation": preparation,
-            }
-
-            return parsed_data
-
+            # Parse JSON string to list first
+            data = json.loads(data_str)
+            progressive_action = ProgressiveActionState.from_array(data)
+            if progressive_action:
+                return {
+                    "entity_id": progressive_action.entity_id,
+                    "building_entity_id": progressive_action.building_entity_id,
+                    "function_type": progressive_action.function_type,
+                    "progress": progressive_action.progress,
+                    "recipe_id": progressive_action.recipe_id,
+                    "craft_count": progressive_action.craft_count,
+                    "last_crit_outcome": progressive_action.last_crit_outcome,
+                    "owner_entity_id": progressive_action.owner_entity_id,
+                    "lock_expiration": progressive_action.lock_expiration,
+                    "preparation": progressive_action.preparation,
+                }
+            return None
         except Exception as e:
+            logging.debug(f"Failed to parse progressive_action_state: {e}")
             return None
 
     def _is_current_claim_member(self, owner_entity_id):

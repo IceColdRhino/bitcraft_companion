@@ -956,6 +956,9 @@ class MainWindow(ctk.CTk):
                 elif msg_type == "traveler_task_timer_update":
                     self._handle_traveler_task_timer_update(msg_data)
 
+                elif msg_type == "reference_data_loaded":
+                    pass
+
                 elif msg_type == "error":
                     messagebox.showerror("Error", msg_data)
                     logging.error(f"Error message displayed: {msg_data}")

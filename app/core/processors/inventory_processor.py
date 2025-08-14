@@ -4,6 +4,7 @@ Inventory processor for handling inventory_state table updates.
 
 import logging
 from .base_processor import BaseProcessor
+from app.models import InventoryState, BuildingState
 
 
 class InventoryProcessor(BaseProcessor):
@@ -41,19 +42,25 @@ class InventoryProcessor(BaseProcessor):
                     delete_operations = {}
                     insert_operations = {}
 
-                    # Parse all deletes
+                    # Parse all deletes using dataclass
                     for delete_str in deletes:
-                        parsed_data = self._parse_inventory_state(delete_str)
-                        if parsed_data:
-                            entity_id = parsed_data.get("entity_id")
-                            delete_operations[entity_id] = parsed_data
+                        try:
+                            inventory_state = InventoryState.from_array(delete_str)
+                            if inventory_state:
+                                delete_operations[inventory_state.entity_id] = inventory_state.to_dict()
+                        except (ValueError, TypeError) as e:
+                            logging.debug(f"Failed to parse inventory delete: {e}")
+                            continue
 
-                    # Parse all inserts
+                    # Parse all inserts using dataclass
                     for insert_str in inserts:
-                        parsed_data = self._parse_inventory_state(insert_str)
-                        if parsed_data:
-                            entity_id = parsed_data.get("entity_id")
-                            insert_operations[entity_id] = parsed_data
+                        try:
+                            inventory_state = InventoryState.from_array(insert_str)
+                            if inventory_state:
+                                insert_operations[inventory_state.entity_id] = inventory_state.to_dict()
+                        except (ValueError, TypeError) as e:
+                            logging.debug(f"Failed to parse inventory insert: {e}")
+                            continue
 
                     # Process operations: handle delete+insert as updates, standalone deletes as removals
                     if not hasattr(self, "_inventory_data"):
@@ -177,14 +184,18 @@ class InventoryProcessor(BaseProcessor):
                 self._inventory_data = {}
 
             for row in inventory_rows:
-                owner_entity_id = row.get("owner_entity_id")
-                if owner_entity_id:
-                    if row.get("inventory_index") == 0:
-                        if owner_entity_id not in self._inventory_data:
-                            self._inventory_data[owner_entity_id] = []
+                try:
+                    # Create InventoryState dataclass instance
+                    inventory_state = InventoryState.from_dict(row)
+                    if inventory_state.owner_entity_id:
+                        if inventory_state.owner_entity_id not in self._inventory_data:
+                            self._inventory_data[inventory_state.owner_entity_id] = []
 
-                        # Store the inventory record
-                        self._inventory_data[owner_entity_id].append(row)
+                        # Store the inventory record as dict for compatibility
+                        self._inventory_data[inventory_state.owner_entity_id].append(inventory_state.to_dict())
+                except (ValueError, TypeError) as e:
+                    logging.debug(f"Failed to process inventory row: {e}")
+                    continue
 
             # for building_id, items in self._inventory_data.items():
 
@@ -201,13 +212,17 @@ class InventoryProcessor(BaseProcessor):
                 self._building_data = {}
 
             for row in building_rows:
-                entity_id = row.get("entity_id")
-                if entity_id:
-                    self._building_data[entity_id] = {
-                        "building_description_id": row.get("building_description_id"),
-                        "claim_entity_id": row.get("claim_entity_id"),
-                        "entity_id": entity_id,
+                try:
+                    # Create BuildingState dataclass instance
+                    building_state = BuildingState.from_dict(row)
+                    self._building_data[building_state.entity_id] = {
+                        "building_description_id": building_state.building_description_id,
+                        "claim_entity_id": building_state.claim_entity_id,
+                        "entity_id": building_state.entity_id,
                     }
+                except (ValueError, TypeError) as e:
+                    logging.debug(f"Failed to process building row: {e}")
+                    continue
 
         except Exception as e:
             logging.error(f"Error processing building data: {e}")
@@ -222,10 +237,15 @@ class InventoryProcessor(BaseProcessor):
                 self._building_nicknames = {}
 
             for row in nickname_rows:
-                entity_id = row.get("entity_id")
-                nickname = row.get("nickname")
-                if entity_id and nickname:
-                    self._building_nicknames[entity_id] = nickname
+                try:
+                    # Process building nickname data directly (no dataclass available yet)
+                    entity_id = row.get("entity_id")
+                    nickname = row.get("nickname")
+                    if entity_id and nickname:
+                        self._building_nicknames[entity_id] = nickname
+                except Exception as e:
+                    logging.debug(f"Failed to process building nickname row: {e}")
+                    continue
 
             # for building_id, nickname in self._building_nicknames.items():
 
@@ -288,9 +308,6 @@ class InventoryProcessor(BaseProcessor):
         try:
             consolidated = {}
 
-            # Use shared item lookup service
-            building_desc_lookup = {b["id"]: b["name"] for b in self.reference_data.get("building_desc", [])}
-
             # Process each building's inventory
             for building_id, inventory_records in self._inventory_data.items():
                 building_info = self._building_data.get(building_id, {})
@@ -303,51 +320,50 @@ class InventoryProcessor(BaseProcessor):
                 # Get container name (nickname or building type name)
                 container_name = self._building_nicknames.get(building_id)
                 if not container_name and building_description_id:
-                    container_name = building_desc_lookup.get(building_description_id, f"Building {building_id}")
+                    # Use ItemLookupService for building name lookup
+                    container_name = self.item_lookup_service.get_building_name(building_description_id)
                 if not container_name:
                     container_name = f"Unknown Building {building_id}"
 
-                # Process each inventory record for this building
+                # Process each inventory record for this building using dataclass methods
                 for inventory_record in inventory_records:
-                    pockets = inventory_record.get("pockets", [])
+                    try:
+                        # Create InventoryState from dict to use dataclass methods
+                        inventory_state = InventoryState.from_dict(inventory_record)
+                        
+                        # Get items from inventory state
+                        items = inventory_state.get_items({})  # Don't need to pass reference data anymore
+                        
+                        for item_info in items:
+                            item_id = item_info.get("item_id", 0)
+                            quantity = item_info.get("quantity", 0)
+                            
+                            # Use ItemLookupService for all item details
+                            item_name = self.item_lookup_service.get_item_name(item_id)
+                            item_tier = self.item_lookup_service.get_item_tier(item_id)
+                            
+                            # Get tag from item lookup
+                            item_data = self.item_lookup_service.lookup_item_by_id(item_id)
+                            item_tag = item_data.get("tag", "") if item_data else ""
 
-                    # Process each pocket (inventory slot)
-                    for pocket in pockets:
-                        try:
-                            # Parse pocket structure: [slot_info, [type, item_data]]
-                            if len(pocket) >= 2 and isinstance(pocket[1], list) and len(pocket[1]) >= 2:
-                                item_data = pocket[1][1]
-                                if isinstance(item_data, list) and len(item_data) >= 2:
-                                    item_id = item_data[0]
-                                    quantity = item_data[1]
+                            # Add to consolidated inventory
+                            if item_name not in consolidated:
+                                consolidated[item_name] = {
+                                    "tier": item_tier,
+                                    "total_quantity": 0,
+                                    "tag": item_tag,
+                                    "containers": {},
+                                }
 
-                                    # Look up item details using smart lookup
-                                    item_info = self.item_lookup_service.lookup_item_by_id(item_id)
-                                    item_name = (
-                                        item_info.get("name", f"Unknown Item {item_id}")
-                                        if item_info
-                                        else f"Unknown Item {item_id}"
-                                    )
-                                    item_tier = item_info.get("tier", 0) if item_info else 0
-                                    item_tag = item_info.get("tag", "") if item_info else ""
-
-                                    # Add to consolidated inventory
-                                    if item_name not in consolidated:
-                                        consolidated[item_name] = {
-                                            "tier": item_tier,
-                                            "total_quantity": 0,
-                                            "tag": item_tag,
-                                            "containers": {},
-                                        }
-
-                                    # Add quantity to total and container
-                                    consolidated[item_name]["total_quantity"] += quantity
-                                    if container_name not in consolidated[item_name]["containers"]:
-                                        consolidated[item_name]["containers"][container_name] = 0
-                                    consolidated[item_name]["containers"][container_name] += quantity
-
-                        except Exception as e:
-                            continue
+                            # Add quantity to total and container
+                            consolidated[item_name]["total_quantity"] += quantity
+                            if container_name not in consolidated[item_name]["containers"]:
+                                consolidated[item_name]["containers"][container_name] = 0
+                            consolidated[item_name]["containers"][container_name] += quantity
+                            
+                    except Exception as e:
+                        logging.debug(f"Error processing inventory record: {e}")
+                        continue
 
             return consolidated
 
@@ -356,110 +372,7 @@ class InventoryProcessor(BaseProcessor):
             return {}
 
 
-    def _format_inventory_data(self, inventory_data):
-        """
-        Format raw inventory data using reference data for UI display.
 
-        Args:
-            inventory_data: List of inventory records from subscription
-
-        Returns:
-            Formatted inventory data for UI
-        """
-        try:
-            if not inventory_data:
-                return []
-
-            # Use shared item lookup service
-            formatted_items = []
-
-            for item in inventory_data:
-                resource_id = item.get("resource_id", 0)
-                quantity = item.get("quantity", 0)
-
-                # Look up item details using shared lookup service
-                item_info = self.item_lookup_service.lookup_item_by_id(resource_id)
-
-                if item_info:
-                    formatted_item = {
-                        "resource_id": resource_id,
-                        "quantity": quantity,
-                        "name": item_info.get("name", f"Unknown Item {resource_id}"),
-                        "description": item_info.get("description", ""),
-                        "owner_entity_id": item.get("owner_entity_id"),
-                        "entity_id": item.get("entity_id"),
-                    }
-                    formatted_items.append(formatted_item)
-                else:
-                    # Item not found in reference data
-                    formatted_item = {
-                        "resource_id": resource_id,
-                        "quantity": quantity,
-                        "name": f"Unknown Item {resource_id}",
-                        "description": "",
-                        "owner_entity_id": item.get("owner_entity_id"),
-                        "entity_id": item.get("entity_id"),
-                    }
-                    formatted_items.append(formatted_item)
-
-            return formatted_items
-
-        except Exception as e:
-            logging.error(f"Error formatting inventory data: {e}")
-            return []
-
-    def _parse_inventory_state(self, data_str):
-        """
-        Parse inventory_state from SpacetimeDB transaction format.
-
-        Format: [entity_id, pockets, inventory_index, cargo_index, owner_entity_id, player_owner_entity_id]
-        """
-        try:
-            # First try JSON parsing since the data might already be parsed
-            if isinstance(data_str, str):
-                try:
-                    import json
-
-                    data = json.loads(data_str)
-                except json.JSONDecodeError:
-                    # Fall back to ast.literal_eval for Python literal strings
-                    import ast
-
-                    data = ast.literal_eval(data_str)
-            else:
-                # Data is already parsed (likely from JSON)
-                data = data_str
-
-            if not isinstance(data, list) or len(data) < 6:
-                logging.warning(
-                    f"Invalid inventory_state data structure: {type(data)}, length: {len(data) if isinstance(data, list) else 'N/A'}"
-                )
-                return None
-
-            # Extract values based on inventory_state structure
-            entity_id = data[0]  # Position 0: entity_id
-            pockets = data[1]  # Position 1: pockets
-            inventory_index = data[2]  # Position 2: inventory_index
-            cargo_index = data[3]  # Position 3: cargo_index
-            owner_entity_id = data[4]  # Position 4: owner_entity_id
-            player_owner_entity_id = data[5]  # Position 5: player_owner_entity_id
-
-            parsed_data = {
-                "entity_id": entity_id,
-                "pockets": pockets,
-                "inventory_index": inventory_index,
-                "cargo_index": cargo_index,
-                "owner_entity_id": owner_entity_id,
-                "player_owner_entity_id": player_owner_entity_id,
-            }
-
-            return parsed_data
-
-        except Exception as e:
-            logging.warning(
-                f"Error parsing inventory_state: {e} - Data type: {type(data_str)}, Data preview: {str(data_str)[:100]}"
-            )
-            return None
 
     def _send_incremental_inventory_update(self, reducer_name, timestamp):
         """

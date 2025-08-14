@@ -2,9 +2,11 @@
 Claims processor for handling claim state table updates.
 """
 
-import time
+import json
 import logging
+import time
 from .base_processor import BaseProcessor
+from app.models import ClaimLocalState, ClaimState, ClaimMemberState
 
 
 class ClaimsProcessor(BaseProcessor):
@@ -39,22 +41,44 @@ class ClaimsProcessor(BaseProcessor):
                 # Process claim_local_state updates (supplies, treasury, etc.)
                 if table_name == "claim_local_state":
                     for insert_str in inserts:
-                        parsed_data = self._parse_claim_local_state(insert_str)
-                        if parsed_data:
-                            # Only process updates for the current claim
-                            claim = self.services.get("claim")
-                            if claim and claim.claim_id and str(parsed_data.get("entity_id")) == str(claim.claim_id):
-                                claim_updates.update(parsed_data)
+                        try:
+                            # Parse JSON string to list first, then use dataclass
+                            data = json.loads(insert_str)
+                            claim_local = ClaimLocalState.from_array(data)
+                            if claim_local:
+                                # Only process updates for the current claim
+                                claim = self.services.get("claim")
+                                if claim and claim.claim_id and str(claim_local.entity_id) == str(claim.claim_id):
+                                    claim_updates.update(claim_local.to_dict())
+                        except Exception as e:
+                            logging.debug(f"Failed to parse claim_local_state transaction: {e}")
+                            # Fallback to legacy parsing
+                            parsed_data = self._parse_claim_local_state(insert_str)
+                            if parsed_data:
+                                claim = self.services.get("claim")
+                                if claim and claim.claim_id and str(parsed_data.get("entity_id")) == str(claim.claim_id):
+                                    claim_updates.update(parsed_data)
 
                 # Process claim_state updates (name changes, etc.)
                 elif table_name == "claim_state":
                     for insert_str in inserts:
-                        parsed_data = self._parse_claim_state(insert_str)
-                        if parsed_data:
-                            # Only process updates for the current claim
-                            claim = self.services.get("claim")
-                            if claim and claim.claim_id and str(parsed_data.get("entity_id")) == str(claim.claim_id):
-                                claim_updates.update(parsed_data)
+                        try:
+                            # Parse JSON string to list first, then use dataclass
+                            data = json.loads(insert_str)
+                            claim_state = ClaimState.from_array(data) 
+                            if claim_state:
+                                # Only process updates for the current claim
+                                claim = self.services.get("claim")
+                                if claim and claim.claim_id and str(claim_state.entity_id) == str(claim.claim_id):
+                                    claim_updates.update(claim_state.to_dict())
+                        except Exception as e:
+                            logging.debug(f"Failed to parse claim_state transaction: {e}")
+                            # Fallback to legacy parsing
+                            parsed_data = self._parse_claim_state(insert_str)
+                            if parsed_data:
+                                claim = self.services.get("claim")
+                                if claim and claim.claim_id and str(parsed_data.get("entity_id")) == str(claim.claim_id):
+                                    claim_updates.update(parsed_data)
 
                 # Process claim_member_state updates (membership changes)
                 elif table_name == "claim_member_state":
@@ -99,22 +123,12 @@ class ClaimsProcessor(BaseProcessor):
                 # Store claim names
                 self._process_claim_state_data(table_rows)
 
-                # Get claim from services and update it with subscription data
-                claim = self.services.get("claim")
-                if claim:
-                    claim.update_from_subscription_data(table_name, table_rows)
-
             elif table_name == "claim_local_state":
                 # Store claim local details (treasury, supplies, etc.)
                 self._process_claim_local_data(table_rows)
 
-                # Get claim from services and update it with subscription data
-                claim = self.services.get("claim")
-                if claim:
-                    claim.update_from_subscription_data(table_name, table_rows)
-
             # Send updated claim info to UI
-            self._refresh_claim_info()
+            self._send_claim_info_update()
 
         except Exception as e:
             logging.error(f"Error handling claim subscription: {e}")
@@ -129,19 +143,36 @@ class ClaimsProcessor(BaseProcessor):
                 self._claim_members = {}
 
             for row in claim_member_rows:
-                claim_entity_id = row.get("claim_entity_id")
-                if claim_entity_id:
-                    self._claim_members[claim_entity_id] = {
-                        "claim_entity_id": claim_entity_id,
-                        "player_entity_id": row.get("player_entity_id"),
-                        "user_name": row.get("user_name"),
+                try:
+                    # Create ClaimMemberState dataclass instance
+                    member = ClaimMemberState.from_dict(row)
+                    self._claim_members[member.claim_entity_id] = {
+                        "claim_entity_id": member.claim_entity_id,
+                        "player_entity_id": member.player_entity_id,
+                        "user_name": member.user_name,
                         "permissions": {
-                            "inventory": row.get("inventory_permission", False),
-                            "build": row.get("build_permission", False),
-                            "officer": row.get("officer_permission", False),
-                            "co_owner": row.get("co_owner_permission", False),
+                            "inventory": member.inventory_permission,
+                            "build": member.build_permission,
+                            "officer": member.officer_permission,
+                            "co_owner": member.co_owner_permission,
                         },
                     }
+                except (ValueError, TypeError) as e:
+                    logging.debug(f"Failed to process claim member row: {e}")
+                    # Fallback to manual processing
+                    claim_entity_id = row.get("claim_entity_id")
+                    if claim_entity_id:
+                        self._claim_members[claim_entity_id] = {
+                            "claim_entity_id": claim_entity_id,
+                            "player_entity_id": row.get("player_entity_id"),
+                            "user_name": row.get("user_name"),
+                            "permissions": {
+                                "inventory": row.get("inventory_permission", False),
+                                "build": row.get("build_permission", False),
+                                "officer": row.get("officer_permission", False),
+                                "co_owner": row.get("co_owner_permission", False),
+                            },
+                        }
 
             # Send current claim info update instead of claims list
             # (Claims list is managed by DataService with one-off queries for all user claims)
@@ -160,9 +191,16 @@ class ClaimsProcessor(BaseProcessor):
                 self._claim_names = {}
 
             for row in claim_state_rows:
-                entity_id = row.get("entity_id")
-                if entity_id:
-                    self._claim_names[entity_id] = row.get("name", f"Claim {entity_id}")
+                try:
+                    # Create ClaimState dataclass instance
+                    claim_state = ClaimState.from_dict(row)
+                    self._claim_names[claim_state.entity_id] = claim_state.name or f"Claim {claim_state.entity_id}"
+                except (ValueError, TypeError) as e:
+                    logging.debug(f"Failed to process claim state row: {e}")
+                    # Fallback to manual processing
+                    entity_id = row.get("entity_id")
+                    if entity_id:
+                        self._claim_names[entity_id] = row.get("name", f"Claim {entity_id}")
 
             # Send current claim info update instead of claims list
             self._send_claim_info_update()
@@ -180,15 +218,28 @@ class ClaimsProcessor(BaseProcessor):
                 self._claim_local_details = {}
 
             for row in claim_local_rows:
-                entity_id = row.get("entity_id")
-                if entity_id:
-                    self._claim_local_details[entity_id] = {
-                        "treasury": row.get("treasury", 0),
-                        "supplies": row.get("supplies", 0),
-                        "tile_count": row.get("num_tiles", 0),
-                        "building_description_id": row.get("building_description_id"),
-                        "location": row.get("location", []),
+                try:
+                    # Create ClaimLocalState dataclass instance
+                    local_state = ClaimLocalState.from_dict(row)
+                    self._claim_local_details[local_state.entity_id] = {
+                        "treasury": local_state.treasury,
+                        "supplies": local_state.supplies,
+                        "tile_count": local_state.num_tiles,
+                        "building_description_id": local_state.building_description_id,
+                        "location": local_state.location,
                     }
+                except (ValueError, TypeError) as e:
+                    logging.debug(f"Failed to process claim local row: {e}")
+                    # Fallback to manual processing
+                    entity_id = row.get("entity_id")
+                    if entity_id:
+                        self._claim_local_details[entity_id] = {
+                            "treasury": row.get("treasury", 0),
+                            "supplies": row.get("supplies", 0),
+                            "tile_count": row.get("num_tiles", 0),
+                            "building_description_id": row.get("building_description_id"),
+                            "location": row.get("location", []),
+                        }
 
             # Send current claim info update instead of claims list
             self._send_claim_info_update()

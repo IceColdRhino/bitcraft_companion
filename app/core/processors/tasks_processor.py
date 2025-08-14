@@ -8,6 +8,7 @@ import time
 import logging
 import threading
 from .base_processor import BaseProcessor
+from app.models import TravelerTaskState
 
 
 class TasksProcessor(BaseProcessor):
@@ -196,14 +197,20 @@ class TasksProcessor(BaseProcessor):
                 self._task_states = {}
 
             for row in task_state_rows:
-                task_id = row.get("task_id")
-                if task_id:
-                    self._task_states[task_id] = {
-                        "entity_id": row.get("entity_id"),
-                        "player_entity_id": row.get("player_entity_id"),
-                        "traveler_id": row.get("traveler_id"),
-                        "completed": row.get("completed", False),
+                try:
+                    # Create TravelerTaskState dataclass instance
+                    task_state = TravelerTaskState.from_dict(row)
+                    
+                    # Store using task_id as key, converting back to dict for compatibility
+                    self._task_states[task_state.task_id] = {
+                        "entity_id": task_state.entity_id,
+                        "player_entity_id": task_state.player_entity_id,
+                        "traveler_id": task_state.traveler_id,
+                        "completed": task_state.completed,
                     }
+                except (ValueError, TypeError) as e:
+                    logging.debug(f"Failed to process task state row: {e}")
+                    continue
 
         except Exception as e:
             logging.error(f"Error processing task state data: {e}")
@@ -239,12 +246,18 @@ class TasksProcessor(BaseProcessor):
                 self._player_state = {}
 
             for row in player_state_rows:
-                entity_id = row.get("entity_id")
-                if entity_id:
-                    self._player_state[entity_id] = {
-                        "traveler_tasks_expiration": row.get("traveler_tasks_expiration", 0),
-                    }
-                    logging.debug(f"[TasksProcessor] Cached player_state for entity {entity_id}")
+                try:
+                    entity_id = row.get("entity_id")
+                    if entity_id:
+                        # Note: PlayerActionState dataclass exists but player_state table structure
+                        # doesn't match it directly. Keep existing logic for now.
+                        self._player_state[entity_id] = {
+                            "traveler_tasks_expiration": row.get("traveler_tasks_expiration", 0),
+                        }
+                        logging.debug(f"[TasksProcessor] Cached player_state for entity {entity_id}")
+                except Exception as e:
+                    logging.debug(f"Failed to process player state row: {e}")
+                    continue
 
         except Exception as e:
             logging.error(f"Error processing player state data: {e}")
@@ -352,7 +365,7 @@ class TasksProcessor(BaseProcessor):
             traveler_names = {}
 
             # Get traveler data from reference data (passed to processor)
-            traveler_data = self.reference_data.get("traveler_desc", [])
+            traveler_data = self.reference_data.get("npc_desc", [])
             if traveler_data:
                 for traveler in traveler_data:
                     npc_type = traveler.get("npc_type")
@@ -980,19 +993,23 @@ class TasksProcessor(BaseProcessor):
                 current_time = time.time()
                 
                 # Check if we need periodic verification
-                time_since_last_query = current_time - self._last_timer_query_time
-                if time_since_last_query >= self.TASK_TIMER_VERIFICATION_INTERVAL:
-                    logging.info(f"[TasksProcessor] Periodic verification: {time_since_last_query:.1f}s since last query")
-                    self._query_task_timer_data(is_verification=True)
+                # DISABLED: Periodic verification causes WebSocket threading conflicts
+                # TODO: Implement thread-safe query mechanism or use subscription-based updates
+                # time_since_last_query = current_time - self._last_timer_query_time
+                # if time_since_last_query >= self.TASK_TIMER_VERIFICATION_INTERVAL:
+                #     logging.info(f"[TasksProcessor] Periodic verification: {time_since_last_query:.1f}s since last query")
+                #     self._query_task_timer_data(is_verification=True)
                 
                 # Check for zero-second refresh
-                if self._current_task_expiration > 0:
-                    time_remaining = self._current_task_expiration - current_time
-                    
-                    # If timer expired or about to expire (within 1 second)
-                    if time_remaining <= 1.0:
-                        logging.info("[TasksProcessor] Timer at zero seconds, checking for task reset")
-                        self._query_task_timer_data(is_zero_refresh=True)
+                # DISABLED: Zero-second refresh also causes WebSocket threading conflicts  
+                # The timer will rely on initial query and real-time transaction updates
+                # if self._current_task_expiration > 0:
+                #     time_remaining = self._current_task_expiration - current_time
+                #     
+                #     # If timer expired or about to expire (within 1 second)
+                #     if time_remaining <= 1.0:
+                #         logging.info("[TasksProcessor] Timer at zero seconds, checking for task reset")
+                #         self._query_task_timer_data(is_zero_refresh=True)
                 
                 # Sleep for 1 second before next check
                 if not self._timer_stop_event.wait(1.0):

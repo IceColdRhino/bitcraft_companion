@@ -1,6 +1,8 @@
+import json
 import logging
 import time
 from typing import List, Dict, Optional
+from ..core.data_paths import get_user_data_path
 
 
 class ClaimService:
@@ -40,7 +42,7 @@ class ClaimService:
         try:
             claim_memberships = self.query_service.get_user_claims(user_id)
             if not claim_memberships:
-                logging.warning(f"No claim memberships found for user {user_id}")
+                logging.warning(f"No claim memberships found for user {user_id} - user may not be a member of any claims")
                 return []
 
             # Get detailed info for each claim
@@ -48,12 +50,15 @@ class ClaimService:
             for membership in claim_memberships:
                 claim_entity_id = membership.get("claim_entity_id")
                 if not claim_entity_id:
+                    logging.warning(f"Membership row missing claim_entity_id: {membership}")
                     continue
 
                 # Get claim name and details
                 claim_details = self._fetch_claim_details(claim_entity_id)
                 if claim_details:
                     claims_list.append(claim_details)
+                else:
+                    logging.warning(f"Failed to fetch details for claim {claim_entity_id} - claim may be inaccessible")
 
             logging.info(f"Found {len(claims_list)} claims for user {user_id}")
             return claims_list
@@ -115,7 +120,7 @@ class ClaimService:
         self.available_claims = claims_list
 
         # Try to restore last selected claim from cache
-        cached_claims = self.client._load_reference_data("player_data")
+        cached_claims = self._load_user_preferences()
         if cached_claims:
             claims_data = cached_claims.get("claims", {})
             last_selected = claims_data.get("last_selected_claim_id")
@@ -128,6 +133,9 @@ class ClaimService:
                         self.current_claim_index = i
                         logging.info(f"Restored last selected claim: {claim['name']}")
                         return
+                
+                # Last selected claim not found in current list
+                logging.warning(f"Previously selected claim {last_selected} no longer available - user may have lost access")
 
         # Default to first claim if no cached selection
         if self.available_claims:
@@ -147,28 +155,12 @@ class ClaimService:
                     return claim
         return None
 
-    def get_current_claim_id(self) -> Optional[str]:
-        """Returns the currently selected claim ID."""
-        return self.current_claim_id
-
     def set_current_claim(self, claim_id: str) -> bool:
         """
-        Sets the current claim (alias for switch_to_claim for API compatibility).
-        
+        Sets the current claim.
+
         Args:
             claim_id: The claim ID to set as current
-            
-        Returns:
-            True if switch was successful, False otherwise
-        """
-        return self.switch_to_claim(claim_id)
-
-    def switch_to_claim(self, claim_id: str) -> bool:
-        """
-        Switches to a different claim.
-
-        Args:
-            claim_id: The claim ID to switch to
 
         Returns:
             True if switch was successful, False otherwise
@@ -206,40 +198,6 @@ class ClaimService:
                 return claim
         return None
 
-    def update_claim_cache(self, claim_id: str, updated_info: Dict):
-        """
-        Updates cached information for a specific claim.
-
-        Args:
-            claim_id: The claim ID to update
-            updated_info: Dictionary with updated claim data
-        """
-        for claim in self.available_claims:
-            if claim["entity_id"] == claim_id:
-                claim.update(updated_info)
-                claim["last_accessed"] = time.time()
-                self._save_claims_cache()
-                break
-
-    def remove_claim(self, claim_id: str):
-        """
-        Removes a claim from the available list (e.g., if user lost access).
-
-        Args:
-            claim_id: The claim ID to remove
-        """
-        self.available_claims = [c for c in self.available_claims if c["entity_id"] != claim_id]
-
-        # If we removed the current claim, switch to the first available
-        if self.current_claim_id == claim_id and self.available_claims:
-            self.switch_to_claim(self.available_claims[0]["entity_id"])
-        elif not self.available_claims:
-            self.current_claim_id = None
-            self.current_claim_index = 0
-
-        self._save_claims_cache()
-        logging.warning(f"Removed claim {claim_id} from available claims")
-
     def _save_claims_cache(self):
         """Saves current claims data to the player data cache."""
         try:
@@ -254,19 +212,18 @@ class ClaimService:
         except Exception as e:
             logging.error(f"Error saving claims cache: {e}")
 
-    def has_multiple_claims(self) -> bool:
-        """Returns True if the user has access to multiple claims."""
-        return len(self.available_claims) > 1
-
-    def get_claims_summary(self) -> str:
-        """Returns a summary string of available claims for logging/debugging."""
-        if not self.available_claims:
-            return "No claims available"
-
-        current_name = "None"
-        if self.current_claim_id:
-            current_claim = self.get_current_claim()
-            if current_claim:
-                current_name = current_claim["claim_name"]
-
-        return f"{len(self.available_claims)} claims available, current: {current_name}"
+    def _load_user_preferences(self) -> Optional[Dict]:
+        """Load user preferences from player_data.json file."""
+        try:
+            file_path = get_user_data_path("player_data.json")
+            with open(file_path, "r") as f:
+                return json.load(f)
+        except FileNotFoundError:
+            logging.warning("player_data.json not found - user preferences and claim cache will use defaults")
+            return None
+        except json.JSONDecodeError as e:
+            logging.error(f"Error parsing player_data.json: {e}")
+            return None
+        except Exception as e:
+            logging.error(f"Error loading user preferences: {e}")
+            return None

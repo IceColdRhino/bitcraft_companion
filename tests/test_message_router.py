@@ -152,8 +152,8 @@ class TestMessageRouter:
         with caplog.at_level("DEBUG"):
             router.handle_message(unknown_table_msg)
         
-        # Should log that 0 processors were found for the table
-        assert "Found 0 processors for table unknown_table" in caplog.text
+        # Should log that no processors were found for the table
+        assert "No processors found for table 'unknown_table'" in caplog.text
 
     def test_processor_error_handling(self, mock_data_queue, caplog):
         """Test error handling when processors throw exceptions."""

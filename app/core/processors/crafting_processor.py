@@ -8,6 +8,7 @@ import time
 import threading
 import logging
 from .base_processor import BaseProcessor
+from app.models import PassiveCraftState, BuildingState, ClaimMemberState
 
 
 class CraftingProcessor(BaseProcessor):
@@ -70,25 +71,33 @@ class CraftingProcessor(BaseProcessor):
                     delete_operations = {}
                     insert_operations = {}
 
-                    # Parse all deletes
+                    # Parse all deletes using dataclass
                     for delete_str in deletes:
-                        parsed_data = self._parse_crafting_data(delete_str)
-                        if parsed_data:
-                            # Only process updates for current claim members
-                            owner_id = parsed_data.get("owner_entity_id")
-                            if self._is_current_claim_member(owner_id):
-                                entity_id = parsed_data.get("entity_id")
-                                delete_operations[entity_id] = parsed_data
+                        try:
+                            parsed_data = self._parse_crafting_data(delete_str)
+                            if parsed_data:
+                                # Only process updates for current claim members
+                                owner_id = parsed_data.get("owner_entity_id")
+                                if self._is_current_claim_member(owner_id):
+                                    entity_id = parsed_data.get("entity_id")
+                                    delete_operations[entity_id] = parsed_data
+                        except Exception as e:
+                            logging.warning(f"Failed to parse crafting delete: {e}")
+                            continue
 
-                    # Parse all inserts
+                    # Parse all inserts using dataclass
                     for insert_str in inserts:
-                        parsed_data = self._parse_crafting_data(insert_str)
-                        if parsed_data:
-                            # Only process updates for current claim members
-                            owner_id = parsed_data.get("owner_entity_id")
-                            if self._is_current_claim_member(owner_id):
-                                entity_id = parsed_data.get("entity_id")
-                                insert_operations[entity_id] = parsed_data
+                        try:
+                            parsed_data = self._parse_crafting_data(insert_str)
+                            if parsed_data:
+                                # Only process updates for current claim members
+                                owner_id = parsed_data.get("owner_entity_id")
+                                if self._is_current_claim_member(owner_id):
+                                    entity_id = parsed_data.get("entity_id")
+                                    insert_operations[entity_id] = parsed_data
+                        except Exception as e:
+                            logging.warning(f"Failed to parse crafting insert: {e}")
+                            continue
 
                     # Process operations: handle delete+insert as updates, standalone deletes as collections
                     if not hasattr(self, "_passive_craft_data"):
@@ -175,35 +184,42 @@ class CraftingProcessor(BaseProcessor):
 
     def _parse_crafting_data(self, data_str):
         """
-        Parse crafting data from the SpacetimeDB format.
-        Format: [entity_id, owner_id, recipe_id, building_id, [timestamp], [status], [slot]]
-
-        Extracted from DataService._parse_crafting_data()
+        Parse crafting data from the SpacetimeDB transaction format using PassiveCraftState dataclass.
+        
+        This method now uses the dataclass factory method for consistent parsing.
         """
         try:
+            # First parse the raw data
             data = ast.literal_eval(data_str)
             if not isinstance(data, list) or len(data) < 7:
                 return None
 
-            # Extract timestamp - can be direct value or in array format
-            timestamp_micros = None
+            # Extract timestamp - can be direct value or in array format  
+            timestamp_obj = {}
             if data[4]:
                 if isinstance(data[4], list) and len(data[4]) > 0:
-                    timestamp_micros = data[4][0]
+                    timestamp_obj = {"__timestamp_micros_since_unix_epoch__": data[4][0]}
                 else:
-                    timestamp_micros = data[4]
+                    timestamp_obj = {"__timestamp_micros_since_unix_epoch__": data[4]}
 
-            return {
+            # Create a dict in the format expected by PassiveCraftState.from_dict()
+            craft_dict = {
                 "entity_id": data[0],
-                "owner_entity_id": data[1],
+                "owner_entity_id": data[1], 
                 "recipe_id": data[2],
                 "building_entity_id": data[3],
-                "timestamp_micros": timestamp_micros,
+                "building_description_id": 0,  # Not available in transaction format
+                "timestamp": timestamp_obj,
                 "status": data[5] if len(data[5]) > 0 else [0, {}],
                 "slot": data[6],
             }
+            
+            # Use dataclass factory method for validation and consistency
+            passive_craft = PassiveCraftState.from_dict(craft_dict)
+            return passive_craft.to_dict()
+            
         except Exception as e:
-            logging.warning(f"Error parsing crafting data: {e}")
+            logging.warning(f"Error parsing crafting data with dataclass: {e}")
             return None
 
     def _log_crafting_action(self, action, crafting_data, reducer_name):
@@ -259,29 +275,27 @@ class CraftingProcessor(BaseProcessor):
             str: Actual item name or fallback
         """
         try:
-            if not self.reference_data or not recipe_id:
+            if not recipe_id:
                 return f"Recipe {recipe_id}"
 
-            recipes = self.reference_data.get("crafting_recipe_desc", [])
+            # Use ItemLookupService to get recipe details
+            recipe = self.item_lookup_service.lookup_recipe_by_id(recipe_id)
+            if not recipe:
+                return f"Recipe {recipe_id}"
 
-            for recipe in recipes:
-                if recipe.get("id") == recipe_id:
-                    recipe_name = recipe.get("name", "Unknown Recipe")
-                    crafted_items = recipe.get("crafted_item_stacks", [])
+            recipe_name = recipe.get("name", "Unknown Recipe")
+            crafted_items = recipe.get("crafted_item_stacks", [])
 
-                    if crafted_items and len(crafted_items) > 0:
-                        first_item = crafted_items[0]
+            if crafted_items and len(crafted_items) > 0:
+                first_item = crafted_items[0]
 
-                        if isinstance(first_item, list) and len(first_item) >= 2:
-                            item_id = first_item[0]
-                            item_info = self.item_lookup_service.lookup_item_by_id(item_id)
-
-                            if item_info:
-                                return item_info.get("name", f"Item {item_id}")
-                    else:
-                        # Fallback to recipe name if no crafted items
-                        return re.sub(r"\{\d+\}", "", recipe_name).strip()
-                    break
+                if isinstance(first_item, list) and len(first_item) >= 2:
+                    item_id = first_item[0]
+                    item_name = self.item_lookup_service.get_item_name(item_id)
+                    return item_name
+            else:
+                # Fallback to recipe name if no crafted items
+                return re.sub(r"\{\d+\}", "", recipe_name).strip()
 
             return f"Recipe {recipe_id}"
 
@@ -443,34 +457,19 @@ class CraftingProcessor(BaseProcessor):
                 self._passive_craft_data = {}
 
             for row in craft_rows:
-                entity_id = row.get("entity_id")
-                if row.get("status", [0, {}]) == [1, {}]:
-                    pass
-                if entity_id:
-                    # Extract timestamp from subscription format
-                    timestamp_micros = None
-                    if "timestamp" in row:
-                        timestamp_obj = row["timestamp"]
-                        if isinstance(timestamp_obj, dict) and "__timestamp_micros_since_unix_epoch__" in timestamp_obj:
-                            timestamp_micros = timestamp_obj["__timestamp_micros_since_unix_epoch__"]
-
-                    # Fallback for direct timestamp_micros field (transaction format)
-                    if timestamp_micros is None:
-                        timestamp_micros = row.get("timestamp_micros")
-
-                    craft_data = {
-                        "entity_id": entity_id,
-                        "owner_entity_id": row.get("owner_entity_id"),
-                        "recipe_id": row.get("recipe_id"),
-                        "building_entity_id": row.get("building_entity_id"),
-                        "timestamp_micros": timestamp_micros,
-                        "status": row.get("status", [0, {}]),
-                        "slot": row.get("slot", 0),
-                        "consumed_item_stacks": row.get("consumed_item_stacks", []),
-                        "crafted_item_stacks": row.get("crafted_item_stacks", []),
-                    }
-
-                    self._passive_craft_data[entity_id] = craft_data
+                try:
+                    # Create PassiveCraftState dataclass instance
+                    passive_craft = PassiveCraftState.from_dict(row)
+                    
+                    # Convert back to dict format for compatibility with existing logic
+                    craft_data = passive_craft.to_dict()
+                    
+                    self._passive_craft_data[passive_craft.entity_id] = craft_data
+                    
+                    entity_id = passive_craft.entity_id
+                except (ValueError, TypeError) as e:
+                    logging.debug(f"Failed to process passive craft row: {e}")
+                    continue
 
                     # Check if this craft is already completed in the initial subscription
                     # If so, add it to notified_ready_items to prevent notifications
@@ -518,13 +517,17 @@ class CraftingProcessor(BaseProcessor):
                 self._building_data = {}
 
             for row in building_rows:
-                entity_id = row.get("entity_id")
-                if entity_id:
-                    self._building_data[entity_id] = {
-                        "building_description_id": row.get("building_description_id"),
-                        "claim_entity_id": row.get("claim_entity_id"),
-                        "entity_id": entity_id,
+                try:
+                    # Create BuildingState dataclass instance
+                    building_state = BuildingState.from_dict(row)
+                    self._building_data[building_state.entity_id] = {
+                        "building_description_id": building_state.building_description_id,
+                        "claim_entity_id": building_state.claim_entity_id,
+                        "entity_id": building_state.entity_id,
                     }
+                except (ValueError, TypeError) as e:
+                    logging.debug(f"Failed to process building row: {e}")
+                    continue
 
         except Exception as e:
             logging.error(f"Error processing building data: {e}")
@@ -539,10 +542,15 @@ class CraftingProcessor(BaseProcessor):
                 self._building_nicknames = {}
 
             for row in nickname_rows:
-                entity_id = row.get("entity_id")
-                nickname = row.get("nickname")
-                if entity_id and nickname:
-                    self._building_nicknames[entity_id] = nickname
+                try:
+                    # Process building nickname data directly (no dataclass available yet)
+                    entity_id = row.get("entity_id")
+                    nickname = row.get("nickname")
+                    if entity_id and nickname:
+                        self._building_nicknames[entity_id] = nickname
+                except Exception as e:
+                    logging.debug(f"Failed to process building nickname row: {e}")
+                    continue
 
         except Exception as e:
             logging.error(f"Error processing building nickname data: {e}")
@@ -560,13 +568,16 @@ class CraftingProcessor(BaseProcessor):
                 self._claim_members = {}
 
             for row in member_rows:
-                claim_entity_id = row.get("claim_entity_id")
-                player_entity_id = row.get("player_entity_id")
-                user_name = row.get("user_name")
-
-                # Store all claim member data since the query service already filters by current claim
-                if player_entity_id and user_name:
-                    self._claim_members[str(player_entity_id)] = user_name
+                try:
+                    # Create ClaimMemberState dataclass instance
+                    member = ClaimMemberState.from_dict(row)
+                    
+                    # Store all claim member data since the query service already filters by current claim
+                    if member.player_entity_id and member.user_name:
+                        self._claim_members[str(member.player_entity_id)] = member.user_name
+                except (ValueError, TypeError) as e:
+                    logging.debug(f"Failed to process claim member row: {e}")
+                    continue
 
         except Exception as e:
             logging.error(f"Error processing claim member data: {e}")

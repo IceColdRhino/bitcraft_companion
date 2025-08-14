@@ -18,11 +18,11 @@ for handler in logging.root.handlers[:]:
 
 # Configure logging to both console and file
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler("debug.log", mode="w"),
+        logging.FileHandler("bc-companion.log", mode="w"),
     ],
     force=True,  # Force reconfiguration if logging was already configured
 )
@@ -32,23 +32,22 @@ def log_system_environment():
     """Log comprehensive system environment information for debugging."""
     try:
         logging.info("=== BitCraft Companion Starting ===")
-
         # Python environment
-        logging.debug(f"Python version: {sys.version}")
-        logging.debug(f"Python executable: {sys.executable}")
-        logging.debug(f"Python platform: {platform.platform()}")
+        logging.info(f"Python version: {sys.version}")
+        logging.info(f"Python executable: {sys.executable}")
+        logging.info(f"Python platform: {platform.platform()}")
 
         # CustomTkinter version
         try:
             ctk_version = ctk.__version__ if hasattr(ctk, "__version__") else "Unknown"
-            logging.debug(f"CustomTkinter version: {ctk_version}")
+            logging.info(f"CustomTkinter version: {ctk_version}")
         except:
-            logging.debug("CustomTkinter version: Unable to determine")
+            logging.info("CustomTkinter version: Unable to determine")
 
         # System info
-        logging.debug(f"Operating System: {platform.system()} {platform.release()}")
-        logging.debug(f"Architecture: {platform.machine()}")
-        logging.debug(f"Processor: {platform.processor()}")
+        logging.info(f"Operating System: {platform.system()} {platform.release()}")
+        logging.info(f"Architecture: {platform.machine()}")
+        logging.info(f"Processor: {platform.processor()}")
 
         # Display information
         try:
