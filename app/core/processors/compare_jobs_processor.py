@@ -6,6 +6,7 @@ import re
 import json
 import time
 import logging
+import numpy as np
 from .base_processor import BaseProcessor
 
 
@@ -217,12 +218,7 @@ class CompareJobsProcessor(BaseProcessor):
                 tool_power = 10
 
                 job_actions = recipe["actions_required"]
-
-                # FIXME
-                # Cludgy way of rounding up without importing math or numpy
-                # Potentially to be modified if either of those modules gets imported
-                total_swings = job_actions*swing_speed/tool_power
-                total_swings = total_swings if total_swings.is_integer() else int(total_swings)+1
+                total_swings = np.ceil(job_actions*swing_speed/tool_power)
 
                 job_time = recipe["time_requirement"]*total_swings
                 job_stamina = recipe["stamina_requirement"]*total_swings
