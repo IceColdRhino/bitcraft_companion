@@ -1,5 +1,6 @@
 import customtkinter as ctk
 import logging
+import numpy as np
 from tkinter import Menu, ttk
 from typing import List, Dict
 from app.ui.components.filter_popup import FilterPopup
@@ -448,8 +449,8 @@ class CompareJobsTab(ctk.CTkFrame):
             # Extract data for each individual operation
             id = operation_data.get("job_id","Unknown")
             job = operation_data.get("job","Unknown")
-            time = operation_data.get("time","Unknown")
-            stamina = operation_data.get("stamina","Unknown")
+            time = np.round(operation_data.get("time","Unknown"),2)
+            stamina = np.round(operation_data.get("stamina","Unknown"),2)
             durability = operation_data.get("durability_cost","Unknown")
             building = operation_data.get("building","Unknown")
             level = operation_data.get("skill","Unknown")

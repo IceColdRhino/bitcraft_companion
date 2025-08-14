@@ -8,6 +8,10 @@ import time
 import logging
 import numpy as np
 from .base_processor import BaseProcessor
+from app.models import (
+    # Reference data dataclasses
+    CraftingRecipeDesc,
+)
 
 
 class CompareJobsProcessor(BaseProcessor):
@@ -25,6 +29,7 @@ class CompareJobsProcessor(BaseProcessor):
             "sell_order_state",
             "character_stats_state",
             "inventory_state",
+            "crafting_recipe_desc",
         ]
 
     def process_transaction(self, table_update, reducer_name, timestamp):
@@ -89,6 +94,8 @@ class CompareJobsProcessor(BaseProcessor):
                 self._process_character_stat_data(table_rows)
             elif table_name == "inventory_state":
                 self._process_toolbelt_data(table_rows)
+            elif table_name == "crafting_recipe_desc":
+                self._process_crafting_recipe_data(table_rows)
 
             # Try to send consolidated compare jobs if we have all necessary data
             self._send_compare_jobs_update()
@@ -139,7 +146,7 @@ class CompareJobsProcessor(BaseProcessor):
         # Generally, there's good Speed info here but not good Power info
         try:
             if not hasattr(self,"_character_stat_data"):
-                self.character_stat_data = {}
+                self._character_stat_data = {}
 
             logging.info(f"TEMP - Character Stat Rows: {stat_rows}")
         
@@ -158,6 +165,19 @@ class CompareJobsProcessor(BaseProcessor):
                     ...
         except Exception as e:
             logging.error(f"Error processing toolbelt data: {e}")
+
+    def _process_crafting_recipe_data(self, recipe_rows):
+        """Process crafting_recipe_desc data to store crafting recipe info."""
+        try:
+            if not hasattr(self,"_crafting_recipes"):
+                self._crafting_recipes = {}
+
+            for row in recipe_rows:
+                crafting_recipe = CraftingRecipeDesc.from_dict(row)
+                self._crafting_recipes[crafting_recipe.id] = crafting_recipe
+        
+        except Exception as e:
+            logging.error(f"Error processing crafting recipe data: {e}")
 
     def _send_compare_jobs_update(self):
         """Send consolidated compare jobs update by combining all cached data."""
@@ -188,22 +208,16 @@ class CompareJobsProcessor(BaseProcessor):
             # First collect all raw operations
             raw_operations = []
 
-            # Get reference data for lookups
-            recipe_lookup = {r["id"]: r for r in self.reference_data.get("crafting_recipe_desc", [])}
-
             # Add crafting recipe info to list of raw_operations
-            # TODO: Get actual crafting speed values
+            # TODO: Get actual crafting speed value
             craft_speed = 1.28
-            for recipe in recipe_lookup.values():
-                job_id = f"craft_{recipe["id"]}"
+            for job_id in self._crafting_recipes:
+                recipe = self._crafting_recipes[job_id]
 
                 job_name = self._replace_curly_variables(recipe)
 
-                # Boolean job passivity marker
-                if recipe["is_passive"] == 1:
-                    job_passive = True
-                else:
-                    job_passive = False
+                job_actions = recipe.actions_required
+                job_passive = recipe.is_passive
 
                 # TODO: Get actual skill speeds
                 # Temporary fallback value
@@ -211,26 +225,26 @@ class CompareJobsProcessor(BaseProcessor):
 
                 combined_speed = (craft_speed - 1)+skill_speed
                 # swing_speed is in [seconds/swing], as in the game
-                swing_speed = recipe["time_requirement"]/combined_speed
+                swing_speed = recipe.time_requirement/combined_speed
 
                 # TODO: Get actual tool powers
                 # Temporary fallback value
                 tool_power = 10
 
-                job_actions = recipe["actions_required"]
+                job_actions = recipe.actions_required
                 total_swings = np.ceil(job_actions*swing_speed/tool_power)
 
-                job_time = recipe["time_requirement"]*total_swings
-                job_stamina = recipe["stamina_requirement"]*total_swings
-                job_durability = recipe["tool_durability_lost"]*total_swings
+                job_time = recipe.time_requirement*total_swings
+                job_stamina = recipe.stamina_requirement*total_swings
+                job_durability = recipe.tool_durability_lost*total_swings
 
-                job_building = recipe["building_requirement"]
-                job_level = recipe["level_requirements"]
-                job_tool = recipe["tool_requirements"]
-                job_inputs = recipe["consumed_item_stacks"]
-                job_xp = recipe["experience_per_progress"]
-                job_outputs = recipe["crafted_item_stacks"]
-                job_hands = recipe["allow_use_hands"]
+                job_building = recipe.building_requirement
+                job_level = recipe.level_requirements
+                job_tool = recipe.tool_requirements
+                job_inputs = recipe.consumed_item_stacks
+                job_xp = recipe.experience_per_progress
+                job_outputs = recipe.crafted_item_stacks
+                job_hands = recipe.allow_use_hands
 
                 raw_operation = {
                     "job_id": job_id,
@@ -404,12 +418,12 @@ class CompareJobsProcessor(BaseProcessor):
 
     def _replace_curly_variables(self, recipe):
         """Fill in the {0}, {1}, {2} variables in names in recipe names"""
-        job_name = recipe["name"]
+        job_name = recipe.name
         job_name = job_name.replace("{2}","{1}")
 
         if "{1}" in job_name:
             try:
-                primary_in = recipe["consumed_item_stacks"][0]
+                primary_in = recipe.consumed_item_stacks[0]
                 if primary_in[2][0] == 1:
                     source = "cargo_desc"
                 else:
@@ -418,13 +432,13 @@ class CompareJobsProcessor(BaseProcessor):
                     primary_in[0],source)
             except:
                 input_name = "Unknown Item"
-                logging.debug(f"Unresolved input variable in job_id: craft_{recipe["id"]}")
+                logging.debug(f"Unresolved input variable in job_id: craft_{recipe.id}")
             job_name = job_name.replace("{1}",input_name)
             
 
         if "{0}" in job_name:
             try:
-                primary_out = recipe["crafted_item_stacks"][0]
+                primary_out = recipe.crafted_item_stacks[0]
                 if primary_out[2][0] == 1:
                     source = "cargo_desc"
                 else:
@@ -433,7 +447,7 @@ class CompareJobsProcessor(BaseProcessor):
                     primary_out[0],source)
             except:
                 output_name = "Unknown Item"
-                logging.debug(f"Unresolved output variable in job_id: craft_{recipe["id"]}")
+                logging.debug(f"Unresolved output variable in job_id: craft_{recipe.id}")
             job_name = job_name.replace("{0}",output_name)
 
         return job_name
