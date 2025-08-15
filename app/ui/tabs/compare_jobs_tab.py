@@ -18,12 +18,16 @@ class CompareJobsTab(ctk.CTkFrame):
                         "Time",
                         "Stamina",
                         "Effort",
+                        "Cost",
+                        "Gross",
+                        "Profit",
+                        "Profit Per Min",
                         "Passive"]
         self.all_data: List[Dict] = []
         self.filtered_data: List[Dict] = []
 
-        self.sort_column = "Job"
-        self.sort_reverse = False
+        self.sort_column = "Profit Per Min"
+        self.sort_reverse = True
         self.active_filters: Dict[str, set] = {}
         self.clicked_header = None
 
@@ -61,8 +65,8 @@ class CompareJobsTab(ctk.CTkFrame):
         style.map("Treeview.Heading", background=[("active", "#2c5d8f")])
 
         # Create unique style names to prevent conflicts
-        self.v_scrollbar_style = "ActiveCrafting.Vertical.TScrollbar"
-        self.h_scrollbar_style = "ActiveCrafting.Horizontal.TScrollbar"
+        self.v_scrollbar_style = "CompareJobs.Vertical.TScrollbar"
+        self.h_scrollbar_style = "CompareJobs.Horizontal.TScrollbar"
 
         # Configure custom scrollbar styles
         style.configure(
@@ -109,11 +113,9 @@ class CompareJobsTab(ctk.CTkFrame):
         self.tree = ttk.Treeview(self, columns=self.headers, show="tree headings", style="Treeview")
 
         # Configure tags for different progress colors based on active crafting status
-        self.tree.tag_configure("ready", background="#2d4a2d", foreground="#4CAF50")  # Green for ready/complete
-        self.tree.tag_configure("crafting", background="#3d3d2d", foreground="#FFA726")  # Orange for in progress
-        self.tree.tag_configure("empty", background="#2a2d2e", foreground="#888888")  # Gray for empty
-        self.tree.tag_configure("child", background="#3a3a3a")  # Darker for child rows
-        self.tree.tag_configure("preparing", background="#2e2e3a", foreground="#B39DDB")  # Purple for preparation
+        self.tree.tag_configure("Profitable", background="#2d4a2d", foreground="#4CAF50")
+        self.tree.tag_configure("Profit-Neutral", background="#3d3d2d", foreground="#FFA726")
+        self.tree.tag_configure("Unprofitable", background="#3d2d2d", foreground="#AF4C4C")
 
         # Create scrollbars with unique styles
         vsb = ttk.Scrollbar(self, orient="vertical", command=self.tree.yview, style=self.v_scrollbar_style)
@@ -132,6 +134,10 @@ class CompareJobsTab(ctk.CTkFrame):
             "Time": 100,
             "Stamina": 100,
             "Effort": 100,
+            "Cost": 100,
+            "Gross": 100,
+            "Profit": 100,
+            "Profit Per Min": 100,
             "Passive": 50,
         }
 
@@ -314,6 +320,10 @@ class CompareJobsTab(ctk.CTkFrame):
                             "effort":item_group.get("effort","Unknown"),
                             "use_hands": item_group.get("use_hands","Unknown"),
                             "passive": item_group.get("passive","Unknown"),
+                            "cost": item_group.get("cost","Unknown"),
+                            "gross": item_group.get("gross","Unknown"),
+                            "profit": item_group.get("profit","Unknown"),
+                            "profit_per_min": item_group.get("profit_per_min","Unknown")
                         }
                     )
                 else:
@@ -321,20 +331,24 @@ class CompareJobsTab(ctk.CTkFrame):
                     for operation in operations:
                         flattened.append(
                             {
-                                "job_id":operation.get("job_id",operation.get("job_id", "Unknown")),
-                                "job":operation.get("job",operation.get("job", "Unknown")),
-                                "time":operation.get("time",operation.get("time", "Unknown")),
-                                "stamina":operation.get("stamina",operation.get("stamina", "Unknown")),
-                                "durability_cost": operation.get("durability_cost",operation.get("durability_cost","Unknown")),
-                                "building": operation.get("building",operation.get("building","Unknown")),
-                                "skill": operation.get(operation.get("skill","Unknown")),
-                                "tool": operation.get(operation.get("tool","Unknown")),
-                                "inputs": operations.get("inputs",operation.get("inputs","Unknown")),
-                                "xp": operations.get("xp",operation.get("xp","Unknown")),
-                                "outputs": operations.get("outputs",operation.get("outputs","Unknown")),
-                                "effort":operation.get("effort",operation.get("effort", "Unknown")),
-                                "use_hands": operation.get("use_hands",operation.get("use_hands","Unknown")),
-                                "passive": operation.get("passive",operation.get("passive","Unknown")),
+                                "job_id":operation.get("job_id","Unknown"),
+                                "job":operation.get("job","Unknown"),
+                                "time":operation.get("time","Unknown"),
+                                "stamina":operation.get("stamina","Unknown"),
+                                "durability_cost": operation.get("durability_cost","Unknown"),
+                                "building": operation.get("building","Unknown"),
+                                "skill": operation.get("skill","Unknown"),
+                                "tool": operation.get("tool","Unknown"),
+                                "inputs": operation.get("inputs","Unknown"),
+                                "xp": operation.get("xp","Unknown"),
+                                "outputs": operation.get("outputs","Unknown"),
+                                "effort": operation.get("effort", "Unknown"),
+                                "use_hands": operation.get("use_hands","Unknown"),
+                                "passive": operation.get("passive","Unknown"),
+                                "cost": operation.get("cost","Unknown"),
+                                "gross": operation.get("gross","Unknown"),
+                                "profit": operation.get("profit","Unknown"),
+                                "profit_per_min": operation.get("profit_per_min","Unknown")
                             }
                         )
 
@@ -415,7 +429,8 @@ class CompareJobsTab(ctk.CTkFrame):
 
         sort_key = self.sort_column.lower().replace(" ", "_")
 
-        if sort_key in ["time", "stamina", "effort", "passive"]:
+        if sort_key in ["time", "stamina", "effort", "passive",
+                        "cost", "gross", "profit", "profit_per_min"]:
             # Numeric sorting
             self.filtered_data.sort(
                 key=lambda x: float(x.get(sort_key, 0)),
@@ -461,12 +476,20 @@ class CompareJobsTab(ctk.CTkFrame):
             effort = operation_data.get("effort","Unknown")
             hands = operation_data.get("use_hands","Unknown")
             passive = operation_data.get("passive","Unknown")
+            cost = operation_data.get("cost","Unknown")
+            gross = operation_data.get("gross","Unknown")
+            profit = operation_data.get("profit","Unknown")
+            profit_per_min = np.round(operation_data.get("profit_per_min","Unknown"),2)
 
             # Prepare row values
             values = [job,
                       time,
                       stamina,
                       effort,
+                      cost,
+                      gross,
+                      profit,
+                      profit_per_min,
                       passive,
                       # Above the comment will be displayed in header-order in table
                       # Below the comment will be hidden until popup
@@ -484,7 +507,12 @@ class CompareJobsTab(ctk.CTkFrame):
             id_tag = id
 
             # Determine tag based on profitability for styling
-            profit_tag = "Profitable"
+            if profit > 0:
+                profit_tag = "Profitable"
+            elif profit < 0:
+                profit_tag = "Unprofitable"
+            else:
+                profit_tag = "Profit-Neutral"
 
             # Insert as a simple flat row
             self.tree.insert("", "end", values=values, tags=(id_tag,profit_tag))

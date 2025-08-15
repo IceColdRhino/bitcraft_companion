@@ -246,6 +246,13 @@ class CompareJobsProcessor(BaseProcessor):
                 job_outputs = recipe.crafted_item_stacks
                 job_hands = recipe.allow_use_hands
 
+                # FIXME: Calculate real values lmao
+                job_cost = np.random.randint(0,100)
+                job_gross = np.random.randint(0,100)
+
+                job_profit = job_gross - job_cost
+                job_pfm = 60*job_profit/job_time
+
                 raw_operation = {
                     "job_id": job_id,
                     "job_name": job_name,
@@ -260,7 +267,11 @@ class CompareJobsProcessor(BaseProcessor):
                     "output_stacks": job_outputs,
                     "actions_required": job_actions,
                     "allow_use_hands": job_hands,
-                    "is_passive": job_passive
+                    "is_passive": job_passive,
+                    "cost": job_cost,
+                    "gross": job_gross,
+                    "profit": job_profit,
+                    "profit_per_min": job_pfm,
                 }
                 raw_operations.append(raw_operation)
 
@@ -305,7 +316,11 @@ class CompareJobsProcessor(BaseProcessor):
                         "output_stacks": op["output_stacks"], 
                         "actions_required": op["actions_required"],
                         "allow_use_hands": op["allow_use_hands"],
-                        "is_passive": op["is_passive"]
+                        "is_passive": op["is_passive"],
+                        "cost": op["cost"],
+                        "gross": op["gross"],
+                        "profit": op["profit"],
+                        "profit_per_min": op["profit_per_min"],
                     }
 
             # Convert to UI format
@@ -345,6 +360,10 @@ class CompareJobsProcessor(BaseProcessor):
                     "effort": job_data["actions_required"],
                     "use_hands": job_data["allow_use_hands"],
                     "passive": job_data["is_passive"],
+                    "cost": job_data["cost"],
+                    "gross": job_data["gross"],
+                    "profit": job_data["profit"],
+                    "profit_per_min": job_data["profit_per_min"],
                 }
 
             return formatted
