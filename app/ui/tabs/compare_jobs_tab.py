@@ -479,7 +479,7 @@ class CompareJobsTab(ctk.CTkFrame):
             cost = operation_data.get("cost","Unknown")
             gross = operation_data.get("gross","Unknown")
             profit = operation_data.get("profit","Unknown")
-            profit_per_min = np.round(operation_data.get("profit_per_min","Unknown"),2)
+            profit_per_min = np.round(operation_data.get("profit_per_min","Unknown"),4)
 
             # Prepare row values
             values = [job,

@@ -1,5 +1,6 @@
 import customtkinter as ctk
 import logging
+from tkinter import ttk
 
 
 class JobPopup(ctk.CTkToplevel):
@@ -14,15 +15,99 @@ class JobPopup(ctk.CTkToplevel):
         # Make window resizable
         self.resizable(True, True)
 
+        self.table_headers = ["Item",
+                              "Rarity",
+                              "Quantity",
+                              "Price Window",
+                              "Sale Price",
+                              "Job Value",
+                              ]
+        self.column_widths = {
+            "Item": 100,
+            "Rarity": 100,
+            "Quantity": 100,
+            "Price Window": 100,
+            "Sale Price": 100,
+            "Job Value": 100,
+        }
+
         self._create_widgets(job_data)
 
     def _create_widgets(self,job_data):
+        style = ttk.Style()
+        style.theme_use("default")
+
+        # Configure the Treeview colors
+        style.configure(
+            "Treeview",
+            background="#2a2d2e",
+            foreground="white",
+            fieldbackground="#343638",
+            borderwidth=0,
+            rowheight=28,
+            relief="flat",
+        )
+        style.map("Treeview", background=[("selected", "#1f6aa5")])
+
+        # Configure headers
+        style.configure(
+            "Treeview.Heading",
+            background="#1e2124",
+            foreground="#e0e0e0",
+            font=("Segoe UI", 11, "normal"),
+            padding=(8, 6),
+            relief="flat",
+            borderwidth=0,
+        )
+        style.map("Treeview.Heading", background=[("active", "#2c5d8f")])
+
+
+
         textbox = ctk.CTkTextbox(self)
         textbox.grid(row=0, column=0)
         text_str = ""
         for key in list(job_data.keys()):
             text_str += f"{key}: {job_data[key]}\n"
         textbox.insert("0.0",text_str)
+
+        self.input_label = ctk.CTkLabel(self,text="Inputs",width=100,height=100)
+        self.input_label.grid(row=7,column=0)
+
+        self.input_tree = ttk.Treeview(self,columns=self.table_headers,show="tree headings")
+        self.input_tree.grid(row=8,column=0,sticky="s")
+        for header in self.table_headers:
+            self.input_tree.heading(header, text=header, anchor="w")
+            self.input_tree.column(header, width=self.column_widths.get(header, 100), minwidth=50, anchor="w")
+        self.input_tree.column("#0", width=20, minwidth=20, stretch=False, anchor="center")
+        self.input_tree.heading("#0", text="", anchor="w")
+        for entry in job_data["inputs"]:
+            self.input_tree.insert("","end", values=entry)
+
+        self.output_label = ctk.CTkLabel(self,text="Outputs",width=100,height=100)
+        self.output_label.grid(row=9,column=0)
+
+        self.output_tree = ttk.Treeview(self,columns=self.table_headers,show="tree headings")
+        self.output_tree.grid(row=10,column=0,sticky="s")
+        for header in self.table_headers:
+            self.output_tree.heading(header, text=header, anchor="w")
+            self.output_tree.column(header, width=self.column_widths.get(header, 100), minwidth=50, anchor="w")
+        self.output_tree.column("#0", width=20, minwidth=20, stretch=False, anchor="center")
+        self.output_tree.heading("#0", text="", anchor="w")
+        for entry in job_data["outputs"]:
+            self.output_tree.insert("","end", values=entry)
+
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
+        self.grid_rowconfigure(2, weight=1)
+        self.grid_rowconfigure(3, weight=1)
+        self.grid_rowconfigure(4, weight=1)
+        self.grid_rowconfigure(5, weight=1)
+        self.grid_rowconfigure(6, weight=1)
+        self.grid_rowconfigure(7, weight=1)
+        self.grid_rowconfigure(8, weight=1)
+        self.grid_rowconfigure(9, weight=1)
+        self.grid_rowconfigure(10, weight=1)
+        self.grid_columnconfigure(0, weight=1)
 
     # def _create_widgets(self, current_selection):
     #     """Creates all the filter popup widgets."""

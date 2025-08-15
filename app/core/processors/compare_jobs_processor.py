@@ -238,17 +238,21 @@ class CompareJobsProcessor(BaseProcessor):
                 job_stamina = recipe.stamina_requirement*total_swings
                 job_durability = recipe.tool_durability_lost*total_swings
 
+                input_stacks = recipe.consumed_item_stacks
+                job_inputs = self._format_input_stacks(input_stacks)
+
+                output_stacks = recipe.crafted_item_stacks
+                job_outputs = self._format_output_stacks(output_stacks)
+
+                job_cost = sum(i[5] for i in job_inputs)
+                job_gross = sum(o[5] for o in job_outputs)
+                #job_gross = np.random.randint(0,100)
+
                 job_building = recipe.building_requirement
                 job_level = recipe.level_requirements
                 job_tool = recipe.tool_requirements
-                job_inputs = recipe.consumed_item_stacks
                 job_xp = recipe.experience_per_progress
-                job_outputs = recipe.crafted_item_stacks
                 job_hands = recipe.allow_use_hands
-
-                # FIXME: Calculate real values lmao
-                job_cost = np.random.randint(0,100)
-                job_gross = np.random.randint(0,100)
 
                 job_profit = job_gross - job_cost
                 job_pfm = 60*job_profit/job_time
@@ -470,3 +474,60 @@ class CompareJobsProcessor(BaseProcessor):
             job_name = job_name.replace("{0}",output_name)
 
         return job_name
+    
+    def _format_input_stacks(self,input_stacks):
+        job_inputs = []
+        for entry in input_stacks:
+            if entry[2][0] == 1:
+                source = "cargo_desc"
+            else:
+                source = "item_desc"
+            item = self.item_lookup_service.lookup_item_by_id(entry[0],source)
+            row = [item["name"],item["rarity"]]
+            # Calculate expected quantity
+            row.append(entry[1]*entry[4])
+
+            # Calculate price window
+            # TODO: Grab real price data
+            window = (np.random.randint(0,10),np.random.randint(10,100))
+            row.append(window)
+
+            # Calculate sale price
+            price = int(np.floor((0.95*(window[1]-window[0])) + window[0]))
+            row.append(price)
+
+            # Calculate job value
+            row.append(np.round(row[2]*row[4],4))
+
+            job_inputs.append(row)
+
+        return job_inputs
+    
+    def _format_output_stacks(self,output_stacks):
+        # FIXME - Currently has no item_list_desc handling
+        job_outputs = []
+        for entry in output_stacks:
+            if entry[2][0] == 1:
+                source = "cargo_desc"
+            else:
+                source = "item_desc"
+            item = self.item_lookup_service.lookup_item_by_id(entry[0],source)
+            row = [item["name"],item["rarity"]]
+            # Calculate expected quantity
+            row.append(entry[1])
+
+            # Calculate price window
+            # TODO: Grab real price data
+            window = (np.random.randint(0,10),np.random.randint(10,100))
+            row.append(window)
+
+            # Calculate sale price
+            price = int(np.floor((0.95*(window[1]-window[0])) + window[0]))
+            row.append(price)
+
+            # Calculate job value
+            row.append(np.round(row[2]*row[4],4))
+
+            job_outputs.append(row)
+
+        return job_outputs
