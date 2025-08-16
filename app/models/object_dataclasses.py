@@ -1944,3 +1944,30 @@ class BuildingFunctionTypeMappingDesc:
     def get_desc_count(self) -> int:
         """Get the number of description IDs in this mapping."""
         return len(self.desc_ids or [])
+
+@dataclass
+class ItemListDesc:
+    """Item List description data from item_list_desc table."""
+    id: int
+    name: str
+    possibilities: List
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "ItemListDesc":
+        """Create ItemListDesc from subscription data."""
+        if not isinstance(data, dict):
+            raise ValueError(f"Invalid item_list_desc format: expected dict, got {type(data)}")
+
+        return cls(
+            id=data.get("id", 0),
+            name=data.get("name", ""),
+            possibilities=data.get("possibilities",[1.0,[]])
+        )
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary format for backward compatibility."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "possibilities": self.possibilities
+        }

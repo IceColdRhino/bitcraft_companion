@@ -11,6 +11,7 @@ from .base_processor import BaseProcessor
 from app.models import (
     # Reference data dataclasses
     CraftingRecipeDesc,
+    ItemListDesc
 )
 
 
@@ -30,6 +31,7 @@ class CompareJobsProcessor(BaseProcessor):
             "character_stats_state",
             "inventory_state",
             "crafting_recipe_desc",
+            "item_list_desc",
         ]
 
     def process_transaction(self, table_update, reducer_name, timestamp):
@@ -49,17 +51,13 @@ class CompareJobsProcessor(BaseProcessor):
                 inserts = update.get("inserts", [])
                 deletes = update.get("deletes", [])
 
-                # TODO
-                # Handle buy_order_state transactions
+                # TODO: Handle buy_order_state transactions
 
-                # TODO
-                # Handle sell_order_state transactions
+                # TODO: Handle sell_order_state transactions
 
-                # TODO
-                # Handle character_stats_state transactions
+                # TODO: Handle character_stats_state transactions
 
-                # TODO
-                # Handle toolbelt-specific inventory_state transactions
+                # TODO: Handle toolbelt-specific inventory_state transactions
 
         except Exception as e:
             logging.error(f"Error handling compare jobs transaction: {e}")
@@ -96,6 +94,8 @@ class CompareJobsProcessor(BaseProcessor):
                 self._process_toolbelt_data(table_rows)
             elif table_name == "crafting_recipe_desc":
                 self._process_crafting_recipe_data(table_rows)
+            elif table_name == "item_list_desc":
+                self._process_item_list_data(table_rows)
 
             # Try to send consolidated compare jobs if we have all necessary data
             self._send_compare_jobs_update()
@@ -141,7 +141,7 @@ class CompareJobsProcessor(BaseProcessor):
 
     def _process_character_stat_data(self,stat_rows):
         """Process character_stats_state data to store character stat info"""
-        # TODO
+        # TODO: Handle character stat data
         # Look up Character State Type bindings to find meaning of "Values" field
         # Generally, there's good Speed info here but not good Power info
         try:
@@ -166,6 +166,8 @@ class CompareJobsProcessor(BaseProcessor):
         except Exception as e:
             logging.error(f"Error processing toolbelt data: {e}")
 
+    # TODO: Check reference data processor
+    # Right now I'm manually handling some desc tables below, but this might be redundant?
     def _process_crafting_recipe_data(self, recipe_rows):
         """Process crafting_recipe_desc data to store crafting recipe info."""
         try:
@@ -179,11 +181,24 @@ class CompareJobsProcessor(BaseProcessor):
         except Exception as e:
             logging.error(f"Error processing crafting recipe data: {e}")
 
+    def _process_item_list_data(self, item_list_rows):
+        """Process item_list_desc data to store item list info."""
+        try:
+            if not hasattr(self,"_item_lists"):
+                self._item_lists = {}
+
+            for row in item_list_rows:
+                item_list = ItemListDesc.from_dict(row)
+                self._item_lists[item_list.id] = item_list
+        
+        except Exception as e:
+            logging.error(f"Error processing item list data: {e}")
+
     def _send_compare_jobs_update(self):
         """Send consolidated compare jobs update by combining all cached data."""
         try:
-            # TODO
-            # Maybe some "return" catching if certain attributes don't exist?
+            # TODO: Maybe handle some catching
+            # Possibly some "return" clauses if certain attributes don't exist?
 
             # Consolidate compare jobs by item
             consolidated_jobs = self._consolidate_compare_jobs()
@@ -211,10 +226,19 @@ class CompareJobsProcessor(BaseProcessor):
             # Add crafting recipe info to list of raw_operations
             # TODO: Get actual crafting speed value
             craft_speed = 1.28
+            job_type = "Craft"
             for job_id in self._crafting_recipes:
                 recipe = self._crafting_recipes[job_id]
+                try:
+                    primary_out = recipe.crafted_item_stacks[0]
+                    source = self._source_convert(primary_out[2])
+                    job_name = self.item_lookup_service.get_item_name(
+                        primary_out[0],source)
+                except:
+                    job_name = "Unknown Item"
+                    logging.debug(f"Unresolved output name in job_id: craft_{job_id}")
 
-                job_name = self._replace_curly_variables(recipe)
+                long_name = self._replace_curly_variables(recipe)
 
                 job_actions = recipe.actions_required
                 job_passive = recipe.is_passive
@@ -246,7 +270,6 @@ class CompareJobsProcessor(BaseProcessor):
 
                 job_cost = sum(i[5] for i in job_inputs)
                 job_gross = sum(o[5] for o in job_outputs)
-                #job_gross = np.random.randint(0,100)
 
                 job_building = recipe.building_requirement
                 job_level = recipe.level_requirements
@@ -259,7 +282,9 @@ class CompareJobsProcessor(BaseProcessor):
 
                 raw_operation = {
                     "job_id": job_id,
+                    "job_type": job_type,
                     "job_name": job_name,
+                    "long_name": long_name,
                     "time_requirement": job_time,
                     "stamina_requirement": job_stamina,
                     "tool_durability_lost": job_durability,
@@ -308,7 +333,9 @@ class CompareJobsProcessor(BaseProcessor):
                 if job_id not in hierarchy:
                     hierarchy[job_id] = {
                         "job_id": job_id,
+                        "job_type": op["job_type"],
                         "job_name": op["job_name"],
+                        "long_name": op["long_name"],
                         "time_requirement": op["time_requirement"],
                         "stamina_requirement": op["stamina_requirement"],
                         "tool_durability_lost": op["tool_durability_lost"],
@@ -351,7 +378,9 @@ class CompareJobsProcessor(BaseProcessor):
                 # Create a simple entry that contains all the individual operations
                 formatted[job_id] = {
                     "job_id": job_id,
+                    "job_type": job_data["job_type"],
                     "job": job_data["job_name"],
+                    "long_name": job_data["long_name"],
                     "time": job_data["time_requirement"],
                     "stamina": job_data["stamina_requirement"],
                     "durability_cost": job_data["tool_durability_lost"],
@@ -431,8 +460,7 @@ class CompareJobsProcessor(BaseProcessor):
         super().clear_cache()
 
         # Clear claim-specific cached data
-        # TODO
-        # Clear cached data
+        # TODO: Clear cached data
         if hasattr(self, "_buy_order_data"):
             self._buy_order_data.clear()
 
@@ -447,10 +475,7 @@ class CompareJobsProcessor(BaseProcessor):
         if "{1}" in job_name:
             try:
                 primary_in = recipe.consumed_item_stacks[0]
-                if primary_in[2][0] == 1:
-                    source = "cargo_desc"
-                else:
-                    source = "item_desc"
+                source = self._source_convert(primary_in[2])
                 input_name = self.item_lookup_service.get_item_name(
                     primary_in[0],source)
             except:
@@ -462,10 +487,7 @@ class CompareJobsProcessor(BaseProcessor):
         if "{0}" in job_name:
             try:
                 primary_out = recipe.crafted_item_stacks[0]
-                if primary_out[2][0] == 1:
-                    source = "cargo_desc"
-                else:
-                    source = "item_desc"
+                source = self._source_convert(primary_out[2])
                 output_name = self.item_lookup_service.get_item_name(
                     primary_out[0],source)
             except:
@@ -475,15 +497,43 @@ class CompareJobsProcessor(BaseProcessor):
 
         return job_name
     
+    def _source_convert(self,type_array):
+        """Convert x format type array to 'preferred source' as used by item_lookup_service"""
+        if type_array == [1, []]:
+            return "cargo_desc"
+        elif type_array == [0, []]:
+            return "item_desc"
+        else:
+            logging.error(f"Unrecognized item type array: {type_array}")
+    
+    def _rarity_convert(self,rare_array):
+        """Convert [x, {}] format rarity array to human-readable string."""
+        # TODO: It maybe makes sense to roll this into item_lookup_service?
+        
+        rare_list = [
+            "Default",
+            "Common",
+            "Uncommmon",
+            "Rare",
+            "Epic",
+            "Legendary",
+            "Mythic",
+        ]
+        try:
+            return rare_list[rare_array[0]]
+        except:
+            logging.error(f"Unable to parse rarity array: {rare_array}")
+
     def _format_input_stacks(self,input_stacks):
+        """Format input stacks from a subscription to a table-ready list."""
         job_inputs = []
         for entry in input_stacks:
-            if entry[2][0] == 1:
-                source = "cargo_desc"
-            else:
-                source = "item_desc"
+            source = self._source_convert(entry[2])
             item = self.item_lookup_service.lookup_item_by_id(entry[0],source)
-            row = [item["name"],item["rarity"]]
+            row = [
+                item["name"],
+                self._rarity_convert(item["rarity"]),
+                ]
             # Calculate expected quantity
             row.append(entry[1]*entry[4])
 
@@ -493,28 +543,67 @@ class CompareJobsProcessor(BaseProcessor):
             row.append(window)
 
             # Calculate sale price
+            # TODO: Calculate buy price from window
             price = int(np.floor((0.95*(window[1]-window[0])) + window[0]))
             row.append(price)
 
-            # Calculate job value
+            # Calculate row's contribution to overall job value
             row.append(np.round(row[2]*row[4],4))
 
             job_inputs.append(row)
 
+        # Sort rows by job value
+        job_inputs.sort(key=lambda x: x[5], reverse=True)
+
         return job_inputs
     
     def _format_output_stacks(self,output_stacks):
-        # FIXME - Currently has no item_list_desc handling
-        job_outputs = []
+        """Format output stacks from a subscription to a table-ready list."""
+        # Stage 1: Create a structure with id, item_type, and quantity
+        # with duplicates from item lists
+        first_pass = []
         for entry in output_stacks:
-            if entry[2][0] == 1:
-                source = "cargo_desc"
-            else:
-                source = "item_desc"
+            item_id = entry[0]
+            item_type = entry[2]
+            source = self._source_convert(item_type)
             item = self.item_lookup_service.lookup_item_by_id(entry[0],source)
-            row = [item["name"],item["rarity"]]
-            # Calculate expected quantity
-            row.append(entry[1])
+            single_output = self._item_list_adder(item,item_type)
+            for element in single_output:
+                element[2] = entry[1]*element[2]
+            first_pass += single_output
+        
+        # Stage 2: Collaps all duplicates, summing along quantity
+        # I'm beyond certain there's a better way to do something like this
+        # pandas groupby for example, if pandas weren't so slow.
+        # Maybe itertools?
+        second_pass = [x[:] for x in first_pass]
+        for entry2 in second_pass:
+            q_sum = 0
+            for entry1 in first_pass:
+                if entry1[0]==entry2[0] and entry1[1]==entry2[1]:
+                    q_sum += entry1[2]
+            entry2[2] = np.round(q_sum,6)
+
+        third_pass = []
+        for entry in second_pass:
+            if entry not in third_pass:
+                third_pass.append(entry)
+
+
+        # Stage 3: Return structure with list rows ordered by  -
+        # name, rarity, quantity, price window, price, and value
+        job_outputs = []
+        for entry in third_pass:
+            item_id = entry[0]
+            item_type = entry[1]
+            source = self._source_convert(item_type)
+            item = self.item_lookup_service.lookup_item_by_id(entry[0],source)
+
+            row = [
+                item["name"],
+                self._rarity_convert(item["rarity"]),
+                entry[2],
+            ]
 
             # Calculate price window
             # TODO: Grab real price data
@@ -522,12 +611,51 @@ class CompareJobsProcessor(BaseProcessor):
             row.append(window)
 
             # Calculate sale price
+            # TODO: Better price calculation
             price = int(np.floor((0.95*(window[1]-window[0])) + window[0]))
             row.append(price)
 
-            # Calculate job value
-            row.append(np.round(row[2]*row[4],4))
+            # Calculate row's contribution to overall job value
+            row.append(np.round(entry[2]*price,4))
 
             job_outputs.append(row)
 
+        # Sort rows by job value
+        job_outputs.sort(key=lambda x: x[5], reverse=True)
+
         return job_outputs
+
+    def _item_list_adder(self,item,item_type):
+        """
+        Given an item_lookup_service output, returns either:
+        - A single-entry list describing only itself
+        or
+        - A multi-entry list describing item list outputs
+        """
+        item_list_id = item.get("item_list_id", 0)
+
+        if item_list_id == 0:
+            # Immediately return items that aren't item lists
+            # and all cargos
+            return [[item["id"],item_type,1]]
+        else:
+            # I should really probably be doing all this with dicts or classes,
+            # not lists.
+            output = []
+            item_list = self._item_lists[item_list_id]
+            possibilities = item_list.possibilities
+            p_sum = sum(p[0] for p in possibilities)
+
+            for possibility in possibilities:
+                for entry in possibility[1]:
+                    # I highly doubt that CWL would send one item list directly to another.
+                    # However, this recursion should handle it if they do.
+                    item_type2 = entry[2]
+                    source = self._source_convert(item_type2)
+                    item2 = self.item_lookup_service.lookup_item_by_id(entry[0],source)
+
+                    single_output = self._item_list_adder(item2,item_type2)
+                    for element in single_output:
+                        element[2] = possibility[0]*entry[1]*element[2]/p_sum
+                    output += single_output
+            return output

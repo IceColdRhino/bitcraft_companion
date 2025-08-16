@@ -104,6 +104,7 @@ class QueryService:
         queries = [
             # Potentially one-time subs that will rarely change
             ("SELECT * FROM resource_desc;"),
+            ("SELECT * FROM item_list_desc;"),
             ("SELECT * FROM item_desc;"),
             ("SELECT * FROM cargo_desc;"),
             ("SELECT * FROM building_desc;"),

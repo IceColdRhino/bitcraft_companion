@@ -14,7 +14,8 @@ class CompareJobsTab(ctk.CTkFrame):
         super().__init__(master, fg_color="transparent")
         self.app = app
 
-        self.headers = ["Job",
+        self.headers = ["Job Type",
+                        "Job",
                         "Time",
                         "Stamina",
                         "Effort",
@@ -130,6 +131,7 @@ class CompareJobsTab(ctk.CTkFrame):
 
         # Set up headings and column widths
         column_widths = {
+            "Job Type": 50,
             "Job": 100,
             "Time": 100,
             "Stamina": 100,
@@ -306,8 +308,10 @@ class CompareJobsTab(ctk.CTkFrame):
                 if not operations:
                     flattened.append(
                         {
+                            "job_type":item_group.get("job_type","Unknown"),
                             "job_id":item_group.get("job_id","Unknown"),
                             "job":item_group.get("job","Unknown"),
+                            "long_name":item_group.get("long_name","Unknown"),
                             "time":item_group.get("time","Unknown"),
                             "stamina":item_group.get("stamina","Unknown"),
                             "durability_cost":item_group.get("durability_cost","Unknown"),
@@ -331,8 +335,10 @@ class CompareJobsTab(ctk.CTkFrame):
                     for operation in operations:
                         flattened.append(
                             {
+                                "job_type":operation.get("job_type","Unknown"),
                                 "job_id":operation.get("job_id","Unknown"),
                                 "job":operation.get("job","Unknown"),
+                                "long_name":operation.get("long_name","Unknown"),
                                 "time":operation.get("time","Unknown"),
                                 "stamina":operation.get("stamina","Unknown"),
                                 "durability_cost": operation.get("durability_cost","Unknown"),
@@ -463,7 +469,9 @@ class CompareJobsTab(ctk.CTkFrame):
         for operation_data in self.filtered_data:
             # Extract data for each individual operation
             id = operation_data.get("job_id","Unknown")
+            job_type = operation_data.get("job_type","Unknown")
             job = operation_data.get("job","Unknown")
+            long_name = operation_data.get("long_name","Unknown")
             time = np.round(operation_data.get("time","Unknown"),2)
             stamina = np.round(operation_data.get("stamina","Unknown"),2)
             durability = operation_data.get("durability_cost","Unknown")
@@ -482,26 +490,29 @@ class CompareJobsTab(ctk.CTkFrame):
             profit_per_min = np.round(operation_data.get("profit_per_min","Unknown"),4)
 
             # Prepare row values
-            values = [job,
-                      time,
-                      stamina,
-                      effort,
-                      cost,
-                      gross,
-                      profit,
-                      profit_per_min,
-                      passive,
-                      # Above the comment will be displayed in header-order in table
-                      # Below the comment will be hidden until popup
-                      durability,
-                      building,
-                      level,
-                      tool,
-                      inputs,
-                      xp,
-                      outputs,
-                      hands,
-                      ]
+            values = [
+                job_type,
+                job,
+                time,
+                stamina,
+                effort,
+                cost,
+                gross,
+                profit,
+                profit_per_min,
+                passive,
+                # Above the comment will be displayed in header-order in table
+                # Below the comment will be hidden until popup
+                long_name,
+                durability,
+                building,
+                level,
+                tool,
+                inputs,
+                xp,
+                outputs,
+                hands,
+                ]
 
             # Give tag to item id
             id_tag = id
@@ -516,12 +527,3 @@ class CompareJobsTab(ctk.CTkFrame):
 
             # Insert as a simple flat row
             self.tree.insert("", "end", values=values, tags=(id_tag,profit_tag))
-
-    def _get_progress_tag(self, progress):
-        """Determines the appropriate tag for color coding based on progress."""
-        progress_str = str(progress).lower()
-
-        if progress_str == "ready":
-            return "ready"
-        else:
-            return "crafting"
