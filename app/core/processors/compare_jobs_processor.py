@@ -9,6 +9,7 @@ import logging
 import numpy as np
 from .base_processor import BaseProcessor
 from app.models import (
+    MarketOrderState,
     # Reference data dataclasses
     CraftingRecipeDesc,
     ItemListDesc
@@ -59,6 +60,8 @@ class CompareJobsProcessor(BaseProcessor):
 
                 # TODO: Handle toolbelt-specific inventory_state transactions
 
+                # TODO: Maybe handle desc transactions?
+
         except Exception as e:
             logging.error(f"Error handling compare jobs transaction: {e}")
 
@@ -106,36 +109,24 @@ class CompareJobsProcessor(BaseProcessor):
     def _process_buy_order_data(self, buy_order_rows):
         """Process buy_order_state data to store buy order info"""
         try:
-            if not hasattr(self, "_buy_order_data"):
-                self._buy_order_data = {}
+            if not hasattr(self, "_buy_orders"):
+                self._buy_orders = {}
 
             for row in buy_order_rows:
-                entity_id = row.get("entity_id")
-                if entity_id:
-                    self._buy_order_data[entity_id] = {
-                        "item_id": row.get("item_id"),
-                        "item_type": row.get("item_type"),
-                        "price_threshold": row.get("price_threshold"),
-                        "quantity": row.get("quantity")
-                    }
+                buy_order = MarketOrderState.from_dict(row)
+                self._buy_orders[buy_order.entity_id] = buy_order
         except Exception as e:
             logging.error(f"Error processing buy order data: {e}")
     
     def _process_sell_order_data(self, sell_order_rows):
         """Process sell_order_state data to store sell order info"""
         try:
-            if not hasattr(self, "_sell_order_data"):
-                self._sell_order_data = {}
+            if not hasattr(self, "_sell_orders"):
+                self._sell_orders = {}
 
             for row in sell_order_rows:
-                entity_id = row.get("entity_id")
-                if entity_id:
-                    self._sell_order_data[entity_id] = {
-                        "item_id": row.get("item_id"),
-                        "item_type": row.get("item_type"),
-                        "price_threshold": row.get("price_threshold"),
-                        "quantity": row.get("quantity")
-                    }
+                sell_order = MarketOrderState.from_dict(row)
+                self._sell_orders[sell_order.entity_id] = sell_order
         except Exception as e:
             logging.error(f"Error processing sell order data: {e}")
 
@@ -461,11 +452,11 @@ class CompareJobsProcessor(BaseProcessor):
 
         # Clear claim-specific cached data
         # TODO: Clear cached data
-        if hasattr(self, "_buy_order_data"):
-            self._buy_order_data.clear()
+        if hasattr(self, "_buy_orders"):
+            self._buy_orders.clear()
 
-        if hasattr(self, "_sell_order_data"):
-            self._sell_order_data.clear()
+        if hasattr(self, "_sell_orders"):
+            self._sell_orders.clear()
 
     def _replace_curly_variables(self, recipe):
         """Fill in the {0}, {1}, {2} variables in names in recipe names"""
@@ -538,13 +529,13 @@ class CompareJobsProcessor(BaseProcessor):
             row.append(entry[1]*entry[4])
 
             # Calculate price window
-            # TODO: Grab real price data
-            window = (np.random.randint(0,10),np.random.randint(10,100))
+            window = self._get_price_window(entry[0],entry[2])
             row.append(window)
 
-            # Calculate sale price
+            # Calculate price to procure materials
             # TODO: Calculate buy price from window
-            price = int(np.floor((0.95*(window[1]-window[0])) + window[0]))
+            #price = int(np.ceil((0.05*(window[1]-window[0])) + window[0]))
+            price = window[1]
             row.append(price)
 
             # Calculate row's contribution to overall job value
@@ -606,13 +597,13 @@ class CompareJobsProcessor(BaseProcessor):
             ]
 
             # Calculate price window
-            # TODO: Grab real price data
-            window = (np.random.randint(0,10),np.random.randint(10,100))
+            window = self._get_price_window(item_id,item_type)
             row.append(window)
 
-            # Calculate sale price
+            # Calculate price to liquidate materials
             # TODO: Better price calculation
-            price = int(np.floor((0.95*(window[1]-window[0])) + window[0]))
+            #price = int(np.floor((0.95*(window[1]-window[0])) + window[0]))
+            price = window[1]-1
             row.append(price)
 
             # Calculate row's contribution to overall job value
@@ -659,3 +650,33 @@ class CompareJobsProcessor(BaseProcessor):
                         element[2] = possibility[0]*entry[1]*element[2]/p_sum
                     output += single_output
             return output
+        
+    def _get_price_window(self,item_id,item_type):
+        """Given item lookup info, returns a price window (low,high) tuple of existing market orders."""
+        if item_type == [0,[]]:
+            item_type = 0
+        elif item_type == [1,[]]:
+            item_type = 1
+        else:
+            logging.error(f"Unrecognized item, id: {item_id}, type array: {item_type}")
+
+
+        # TODO: Introduce conditions to allow for supply sale to claim?
+        try:
+            buy_ids = [b for b in self._buy_orders.values() if b.item_id==item_id]
+            buy_types = [b for b in buy_ids if b.item_type==item_type]
+            max_buy = max(buy_types, key=lambda x:x.price_threshold).price_threshold
+        except:
+            # TODO: Allow the user to specify their own preferred fallback value
+            max_buy = 0
+
+        # TODO: Introduce conditions to allow for purchase of NPC products
+        try:
+            sell_ids = [s for s in self._sell_orders.values() if s.item_id==item_id]
+            sell_types = [s for s in sell_ids if s.item_type==item_type]
+            min_sell = min(sell_types, key=lambda x:x.price_threshold).price_threshold
+        except:
+            # TODO: Allow the user to specify their own preferred fallback value
+            min_sell = int(1e6)
+        
+        return (max_buy, min_sell)

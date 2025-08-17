@@ -10,7 +10,7 @@ import logging
 from app.models import (
     InventoryState, PassiveCraftState, ProgressiveActionState,
     TravelerTaskState, ClaimLocalState, ClaimState, ClaimMemberState,
-    BuildingState, PublicProgressiveActionState,
+    BuildingState, PublicProgressiveActionState, MarketOrderState,
     # Reference data dataclasses
     ResourceDesc, ItemDesc, CargoDesc, BuildingDesc, BuildingTypeDesc,
     CraftingRecipeDesc, ItemListDesc, ClaimTileCost, NpcDesc, BuildingFunctionTypeMappingDesc
@@ -54,6 +54,7 @@ class MessageRouter:
             "claim_member_state": ClaimMemberState,
             "building_state": BuildingState,
             "public_progressive_action_state": PublicProgressiveActionState,
+            "market_order_state": MarketOrderState,
             # Reference data tables
             "resource_desc": ResourceDesc,
             "item_desc": ItemDesc,

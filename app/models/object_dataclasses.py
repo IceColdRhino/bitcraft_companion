@@ -1269,6 +1269,68 @@ class PassiveCraftState:
             return {"timestamp_micros": timestamp_micros, "readable_time": readable_time}
 
         return {"timestamp_micros": None, "readable_time": None}
+    
+@dataclass
+class MarketOrderState:
+    # Copy-pasted from ClaimState
+    """
+    Data class for buy_order_state and sell_order_state data from SpacetimeDB.
+    """
+
+    entity_id: int
+    owner_entity_id: int
+    claim_entity_id: int
+    item_id: int
+    item_type: int
+    price_threshold: int
+    quantity: int
+    timestamp_micros: int
+    stored_coins: int
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "MarketOrderState":
+        """Create MarketOrderState from SpacetimeDB JSON format."""
+        if not isinstance(data, dict):
+            raise ValueError(f"Invalid market_order_state format: expected dict, got {type(data)}")
+
+        required_fields = ["entity_id", "owner_entity_id", "claim_entity_id", "item_id", "item_type",
+                           "price_threshold", "quantity", "timestamp", "stored_coins"]
+        for field in required_fields:
+            if field not in data:
+                raise ValueError(f"Missing required field '{field}' in market_order_state data")
+
+        return cls(
+            entity_id=data["entity_id"],
+            owner_entity_id=data["owner_entity_id"],
+            claim_entity_id=data["claim_entity_id"],
+            item_id=data["item_id"],
+            item_type=data["item_type"],
+            price_threshold=data["price_threshold"],
+            quantity=data["quantity"],
+            timestamp_micros=data["timestamp"]["__timestamp_micros_since_unix_epoch__"],
+            stored_coins=data["stored_coins"],
+        )
+
+    @classmethod
+    def from_json_string(cls, json_str: str) -> "MarketOrderState":
+        """Create MarketOrderState from JSON string."""
+        # TODO: I'm not 100% sure this works, given the weird timestamp format
+        data = json.loads(json_str)
+        return cls.from_dict(data)
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary format for backward compatibility."""
+        return {
+            "entity_id": self.entity_id,
+            "owner_entity_id": self.owner_entity_id,
+            "claim_entity_id": self.claim_entity_id,
+            "item_id": self.item_id,
+            "item_type": self.item_type,
+            "price_threshold": self.price_threshold,
+            "quantity": self.quantity,
+            "timestamp_micros": self.timestamp_micros,
+            "stored_coins": self.stored_coins,
+        }
 
 
 # ==============================================================================
