@@ -190,6 +190,8 @@ class CompareJobsProcessor(BaseProcessor):
         try:
             # TODO: Maybe handle some catching
             # Possibly some "return" clauses if certain attributes don't exist?
+            if not (hasattr(self, "_crafting_recipes") and self._crafting_recipes):
+                return
 
             # Consolidate compare jobs by item
             consolidated_jobs = self._consolidate_compare_jobs()
@@ -262,8 +264,13 @@ class CompareJobsProcessor(BaseProcessor):
                 job_cost = sum(i[5] for i in job_inputs)
                 job_gross = sum(o[5] for o in job_outputs)
 
-                job_building = recipe.building_requirement
+                # TODO: Better skill/level handling
+                # I would like something more resilient than the simple assumption that
+                # the first skill in the list is the only skill in the list
                 job_level = recipe.level_requirements
+                job_level = self._level_convert(recipe.level_requirements[0])
+
+                job_building = recipe.building_requirement
                 job_tool = recipe.tool_requirements
                 job_xp = recipe.experience_per_progress
                 job_hands = recipe.allow_use_hands
@@ -496,9 +503,18 @@ class CompareJobsProcessor(BaseProcessor):
             return "item_desc"
         else:
             logging.error(f"Unrecognized item type array: {type_array}")
+
+    def _level_convert(self,level_array):
+        "Convert [x, y] format level array to human-readable 'skill: level' string"
+        skill = self._skill_convert(level_array[0])
+        level = level_array[1]
+        # On the one hand, I'd like 100 to and 1 to not be next to each other
+        # On the other hand, that many leading zeros gives me a headache
+        #return f"{skill}: {level:03d}"
+        return f"{skill}: {level}"
     
     def _rarity_convert(self,rare_array):
-        """Convert [x, {}] format rarity array to human-readable string."""
+        """Convert [x, {}] format rarity array to human-readable string"""
         # TODO: It maybe makes sense to roll this into item_lookup_service?
         
         rare_list = [
@@ -514,6 +530,34 @@ class CompareJobsProcessor(BaseProcessor):
             return rare_list[rare_array[0]]
         except:
             logging.error(f"Unable to parse rarity array: {rare_array}")
+
+    def _skill_convert(self,skill_id):
+        """Convert skill id to human readable skill string"""
+        skill_list = {
+            1: "Any",
+            2: "Forestry",
+            3: "Carpentry",
+            4: "Masonry",
+            5: "Mining",
+            6: "Smithing",
+            7: "Scholar",
+            8: "Leatherworking",
+            9: "Hunting",
+            10: "Tailoring",
+            11: "Farming",
+            12: "Fishing",
+            13: "Cooking",
+            14: "Foraging",
+            15: "Construction",
+            17: "Taming",
+            18: "Slayer",
+            19: "Merchanting",
+            21: "Sailing",
+        }
+        try:
+            return skill_list[skill_id]
+        except:
+            logging.error(f"Unrecognized skill id: {skill_id}")
 
     def _format_input_stacks(self,input_stacks):
         """Format input stacks from a subscription to a table-ready list."""

@@ -16,9 +16,8 @@ class CompareJobsTab(ctk.CTkFrame):
 
         self.headers = ["Job Type",
                         "Job",
+                        "Skill",
                         "Time",
-                        "Stamina",
-                        "Effort",
                         "Cost",
                         "Gross",
                         "Profit",
@@ -133,9 +132,8 @@ class CompareJobsTab(ctk.CTkFrame):
         column_widths = {
             "Job Type": 50,
             "Job": 100,
+            "Skill": 100,
             "Time": 100,
-            "Stamina": 100,
-            "Effort": 100,
             "Cost": 100,
             "Gross": 100,
             "Profit": 100,
@@ -412,6 +410,7 @@ class CompareJobsTab(ctk.CTkFrame):
         """Check if individual operation data matches the search term."""
         # Check main fields in the flattened operation data
         searchable_fields = ["job",
+                             "skill",
                              ]
         for field in searchable_fields:
             if search_term in str(operation_data.get(field, "")).lower():
@@ -435,8 +434,7 @@ class CompareJobsTab(ctk.CTkFrame):
 
         sort_key = self.sort_column.lower().replace(" ", "_")
 
-        if sort_key in ["time", "stamina", "effort", "passive",
-                        "cost", "gross", "profit", "profit_per_min"]:
+        if sort_key in ["time", "cost", "gross", "profit", "profit_per_min", "passive"]:
             # Numeric sorting
             self.filtered_data.sort(
                 key=lambda x: float(x.get(sort_key, 0)),
@@ -476,7 +474,7 @@ class CompareJobsTab(ctk.CTkFrame):
             stamina = np.round(operation_data.get("stamina","Unknown"),2)
             durability = operation_data.get("durability_cost","Unknown")
             building = operation_data.get("building","Unknown")
-            level = operation_data.get("skill","Unknown")
+            skill = operation_data.get("skill","Unknown")
             tool = operation_data.get("tool","Unknown")
             inputs = operation_data.get("inputs","Unknown")
             xp = operation_data.get("xp","Unknown")
@@ -484,18 +482,17 @@ class CompareJobsTab(ctk.CTkFrame):
             effort = operation_data.get("effort","Unknown")
             hands = operation_data.get("use_hands","Unknown")
             passive = operation_data.get("passive","Unknown")
-            cost = operation_data.get("cost","Unknown")
-            gross = operation_data.get("gross","Unknown")
-            profit = operation_data.get("profit","Unknown")
-            profit_per_min = np.round(operation_data.get("profit_per_min","Unknown"),4)
+            cost = np.round(operation_data.get("cost","Unknown"),2)
+            gross = np.round(operation_data.get("gross","Unknown"),2)
+            profit = np.round(operation_data.get("profit","Unknown"),2)
+            profit_per_min = np.round(operation_data.get("profit_per_min","Unknown"),3)
 
             # Prepare row values
             values = [
                 job_type,
                 job,
+                skill,
                 time,
-                stamina,
-                effort,
                 cost,
                 gross,
                 profit,
@@ -504,9 +501,10 @@ class CompareJobsTab(ctk.CTkFrame):
                 # Above the comment will be displayed in header-order in table
                 # Below the comment will be hidden until popup
                 long_name,
+                stamina,
+                effort,
                 durability,
                 building,
-                level,
                 tool,
                 inputs,
                 xp,
