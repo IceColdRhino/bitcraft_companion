@@ -625,7 +625,7 @@ class BitCraft:
                     break
                 try:
                     # Use a timeout to allow the loop to check the stop event
-                    msg = self.ws_connection.recv(timeout=1.0)
+                    msg = self.ws_connection.recv(timeout=100.0)
                     data = json.loads(msg)
 
                     # Call the DataService callback with the message

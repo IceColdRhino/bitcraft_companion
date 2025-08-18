@@ -13,7 +13,8 @@ from app.models import (
     BuildingState, PublicProgressiveActionState, MarketOrderState,
     # Reference data dataclasses
     ResourceDesc, ItemDesc, CargoDesc, BuildingDesc, BuildingTypeDesc,
-    CraftingRecipeDesc, ItemListDesc, ClaimTileCost, NpcDesc, BuildingFunctionTypeMappingDesc
+    CraftingRecipeDesc, ExtractionRecipeDesc, ItemListDesc, ClaimTileCost,
+    NpcDesc, BuildingFunctionTypeMappingDesc
 )
 
 
@@ -62,6 +63,7 @@ class MessageRouter:
             "building_desc": BuildingDesc,
             "building_type_desc": BuildingTypeDesc,
             "crafting_recipe_desc": CraftingRecipeDesc,
+            "extraction_recipe_desc": ExtractionRecipeDesc,
             "item_list_desc": ItemListDesc,
             "claim_tile_cost": ClaimTileCost,
             "npc_desc": NpcDesc,

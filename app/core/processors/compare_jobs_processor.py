@@ -12,6 +12,7 @@ from app.models import (
     MarketOrderState,
     # Reference data dataclasses
     CraftingRecipeDesc,
+    ExtractionRecipeDesc,
     ItemListDesc
 )
 
@@ -32,6 +33,7 @@ class CompareJobsProcessor(BaseProcessor):
             "character_stats_state",
             "inventory_state",
             "crafting_recipe_desc",
+            "extraction_recipe_desc",
             "item_list_desc",
         ]
 
@@ -97,6 +99,8 @@ class CompareJobsProcessor(BaseProcessor):
                 self._process_toolbelt_data(table_rows)
             elif table_name == "crafting_recipe_desc":
                 self._process_crafting_recipe_data(table_rows)
+            elif table_name == "extraction_recipe_desc":
+                self._process_extraction_recipe_data(table_rows)
             elif table_name == "item_list_desc":
                 self._process_item_list_data(table_rows)
 
@@ -172,6 +176,19 @@ class CompareJobsProcessor(BaseProcessor):
         except Exception as e:
             logging.error(f"Error processing crafting recipe data: {e}")
 
+    def _process_extraction_recipe_data(self,recipe_rows):
+        """Process extraction_recipe_desc data to store extraction recipe info."""
+        try:
+            if not hasattr(self,"_extraction_recipes"):
+                self._extraction_recipes = {}
+
+            for row in recipe_rows:
+                extraction_recipe = ExtractionRecipeDesc.from_dict(row)
+                self._extraction_recipes[extraction_recipe.id] = extraction_recipe
+        
+        except Exception as e:
+            logging.error(f"Error processing crafting recipe data: {e}")
+
     def _process_item_list_data(self, item_list_rows):
         """Process item_list_desc data to store item list info."""
         try:
@@ -188,9 +205,10 @@ class CompareJobsProcessor(BaseProcessor):
     def _send_compare_jobs_update(self):
         """Send consolidated compare jobs update by combining all cached data."""
         try:
-            # TODO: Maybe handle some catching
-            # Possibly some "return" clauses if certain attributes don't exist?
             if not (hasattr(self, "_crafting_recipes") and self._crafting_recipes):
+                return
+            
+            if not (hasattr(self, "_extraction_recipes") and self._extraction_recipes):
                 return
 
             # Consolidate compare jobs by item
@@ -261,13 +279,23 @@ class CompareJobsProcessor(BaseProcessor):
                 output_stacks = recipe.crafted_item_stacks
                 job_outputs = self._format_output_stacks(output_stacks)
 
-                job_cost = sum(i[5] for i in job_inputs)
-                job_gross = sum(o[5] for o in job_outputs)
+                try:
+                    job_cost = sum(i[5] for i in job_inputs)
+                except:
+                    logging.debug(f"No input prices detected in input stack {job_inputs} for craft_{job_id}")
+                    job_cost = 0
+                try:
+                    job_gross = sum(o[5] for o in job_outputs)
+                except:
+                    logging.debug(f"No output prices detected in output stack {job_outputs} for craft_{job_id}")
+                    job_gross = 0
+
+                job_profit = job_gross - job_cost
+                job_pfm = 60*job_profit/job_time
 
                 # TODO: Better skill/level handling
                 # I would like something more resilient than the simple assumption that
                 # the first skill in the list is the only skill in the list
-                job_level = recipe.level_requirements
                 job_level = self._level_convert(recipe.level_requirements[0])
 
                 job_building = recipe.building_requirement
@@ -275,11 +303,8 @@ class CompareJobsProcessor(BaseProcessor):
                 job_xp = recipe.experience_per_progress
                 job_hands = recipe.allow_use_hands
 
-                job_profit = job_gross - job_cost
-                job_pfm = 60*job_profit/job_time
-
                 raw_operation = {
-                    "job_id": job_id,
+                    "job_id": f"craft_{job_id}",
                     "job_type": job_type,
                     "job_name": job_name,
                     "long_name": long_name,
@@ -303,6 +328,90 @@ class CompareJobsProcessor(BaseProcessor):
                 raw_operations.append(raw_operation)
 
             # TODO: Add extraction recipe info to list of raw_operations
+            gather_speed = 1.28
+            job_type = "Gather"
+            for job_id in self._extraction_recipes:
+                recipe = self._extraction_recipes[job_id]
+                # In the current state of the game, I only care about extractions from resources
+                # not extractions from cargos
+                if recipe.resource_id==0 or recipe.cargo_id!=0:
+                    continue
+
+                resource = self.item_lookup_service.lookup_item_by_id(recipe.resource_id,"resource_desc")
+
+                job_name = resource["name"]
+                long_name = f"{recipe.verb_phrase} {job_name}"
+
+                job_level = self._level_convert(recipe.level_requirements[0])
+
+                # TODO: Get actual skill speeds
+                # Temporary fallback value
+                skill_speed = 1.09
+
+                combined_speed = (gather_speed - 1)+skill_speed
+                # swing_speed is in [seconds/swing], as in the game
+                swing_speed = recipe.time_requirement/combined_speed
+
+                # Temporary placeholder values
+                total_swings = 1
+                job_actions = 1
+                job_time = 1
+                job_stamina = 1
+                job_durability = 0
+
+
+                input_stacks = recipe.consumed_item_stacks
+                job_inputs = self._format_input_stacks(input_stacks)
+                for entry in job_inputs:
+                    # Probability of input consumption is (believed to be) on a per-swing basis
+                    # so quantity and value fields get multiplied accordingly
+                    entry[2] = total_swings*entry[2]
+                    entry[5] = total_swings*entry[5]
+
+
+                job_outputs = []
+
+                try:
+                    job_cost = sum(i[5] for i in job_inputs)
+                except:
+                    job_cost = 0
+                try:
+                    job_gross = sum(o[5] for o in job_outputs)
+                except:
+                    job_gross = 0
+                job_profit = job_gross - job_cost
+                job_pfm = 60*job_profit/job_time
+
+                job_passive = False
+
+                job_building = []
+                job_tool = []
+                job_xp = []
+                job_hands = False
+                
+                raw_operation = {
+                    "job_id": f"extract_{job_id}",
+                    "job_type": job_type,
+                    "job_name": job_name,
+                    "long_name": long_name,
+                    "time_requirement": job_time,
+                    "stamina_requirement": job_stamina,
+                    "tool_durability_lost": job_durability,
+                    "building_requirement": job_building,
+                    "level_requirement": job_level,
+                    "tool_requirement": job_tool,
+                    "input_stacks": job_inputs,
+                    "xp_gain": job_xp,
+                    "output_stacks": job_outputs,
+                    "actions_required": job_actions,
+                    "allow_use_hands": job_hands,
+                    "is_passive": job_passive,
+                    "cost": job_cost,
+                    "gross": job_gross,
+                    "profit": job_profit,
+                    "profit_per_min": job_pfm,
+                }
+                raw_operations.append(raw_operation)
 
             # Now build the hierarchy
             return self._build_hierarchy(raw_operations)

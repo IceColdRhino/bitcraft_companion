@@ -1858,6 +1858,92 @@ class CraftingRecipeDesc:
             return 0.0
         return len(self.crafted_item_stacks) / self.time_requirement
 
+@dataclass
+class ExtractionRecipeDesc:
+    """Extraction recipe description data from extraction_recipe_desc table."""
+    id: int
+    resource_id: int
+    cargo_id: int
+    discovery_triggers: List
+    required_knowledges: List
+    time_requirement: float
+    stamina_requirement: float
+    tool_durability_lost: int
+    extracted_item_stacks: List
+    consumed_item_stacks: List
+    range: int
+    tool_requirements: List
+    allow_use_hands: bool
+    level_requirements: List
+    experience_per_progress: List
+    verb_phrase: str
+    tool_mesh_index: int
+    recipe_performance_id: int
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "ExtractionRecipeDesc":
+        """Create ExtractionRecipeDesc from subscription data."""
+        if not isinstance(data, dict):
+            raise ValueError(f"Invalid extraction_recipe_desc format: expected dict, got {type(data)}")
+
+        return cls(
+            id=data.get("id", 0),
+            resource_id=data.get("resource_id",0),
+            cargo_id=data.get("cargo_id",0),
+            discovery_triggers=data.get("discovery_triggers",[]),
+            required_knowledges=data.get("required_knowledges",[]),
+            time_requirement=data.get("time_requirement",0.0),
+            stamina_requirement=data.get("stamina_requirement",0.0),
+            tool_durability_lost=data.get("tool_durability_lost",0),
+            extracted_item_stacks=data.get("extracted_item_stacks",[]),
+            consumed_item_stacks=data.get("consumed_item_stacks",[]),
+            range=data.get("range",0),
+            tool_requirements=data.get("tool_requirements",[]),
+            allow_use_hands=data.get("allow_use_hands",False),
+            level_requirements=data.get("level_requirements",[]),
+            experience_per_progress=data.get("experience_per_progress",[]),
+            verb_phrase=data.get("verb_phrase","Gather"),
+            tool_mesh_index=data.get("tool_mesh_index",0),
+            recipe_performance_id=data.get("recipe_performance_id",0),
+        )
+
+    # Copy-pasted class from CraftingRecipeDesc
+    # Do I want this function? Or not really?
+    # def get_recipe_summary(self) -> dict:
+    #     """Get human-readable recipe requirements and outputs."""
+    #     return {
+    #         "name": self.name,
+    #         "time_required": self.time_requirement,
+    #         "actions_required": self.actions_required,
+    #         "stamina_cost": self.stamina_requirement,
+    #         "inputs": len(self.consumed_item_stacks),
+    #         "outputs": len(self.crafted_item_stacks),
+    #         "is_passive": self.is_passive,
+    #     }
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary format for backward compatibility."""
+        return {
+            "id": self.id,
+            "resource_id": self.resource_id,
+            "cargo_id": self.cargo_id,
+            "discovery_triggers": self.discovery_triggers,
+            "required_knowledges": self.required_knowledges,
+            "time_requirement": self.time_requirement,
+            "stamina_requirement": self.stamina_requirement,
+            "tool_durability_lost": self.tool_durability_lost,
+            "extracted_item_stacks": self.extracted_item_stacks,
+            "consumed_item_stacks": self.consumed_item_stacks,
+            "range": self.range,
+            "tool_requirements": self.tool_requirements,
+            "allow_use_hands": self.allow_use_hands,
+            "level_requirements": self.level_requirements,
+            "experience_per_progress": self.experience_per_progress,
+            "verb_phrase": self.verb_phrase,
+            "tool_mesh_index": self.tool_mesh_index,
+            "recipe_performance_id": self.recipe_performance_id,
+        }
+
 
 @dataclass
 class ClaimTileCost:
