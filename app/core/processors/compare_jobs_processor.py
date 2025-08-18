@@ -25,6 +25,21 @@ class CompareJobsProcessor(BaseProcessor):
     for compare jobs (progressive action) changes.
     """
 
+    def __init__(self, data_queue, services, reference_data):
+        """
+        Initialize the active crafting processor.
+
+        Args:
+            data_queue: Queue for sending processed data to UI
+            services: Dict of available services (item_lookup_service, etc.)
+            reference_data: Static game data (recipes, items, buildings)
+
+        Instance Variables:
+            ...
+        """
+        super().__init__(data_queue, services, reference_data)
+        self.current_compare_jobs_data = []
+
     def get_table_names(self):
         """Return list of table names this processor handles."""
         return [
@@ -32,9 +47,6 @@ class CompareJobsProcessor(BaseProcessor):
             "sell_order_state",
             "character_stats_state",
             "inventory_state",
-            "crafting_recipe_desc",
-            "extraction_recipe_desc",
-            "item_list_desc",
         ]
 
     def process_transaction(self, table_update, reducer_name, timestamp):
@@ -61,8 +73,6 @@ class CompareJobsProcessor(BaseProcessor):
                 # TODO: Handle character_stats_state transactions
 
                 # TODO: Handle toolbelt-specific inventory_state transactions
-
-                # TODO: Maybe handle desc transactions?
 
         except Exception as e:
             logging.error(f"Error handling compare jobs transaction: {e}")
@@ -97,12 +107,6 @@ class CompareJobsProcessor(BaseProcessor):
                 self._process_character_stat_data(table_rows)
             elif table_name == "inventory_state":
                 self._process_toolbelt_data(table_rows)
-            elif table_name == "crafting_recipe_desc":
-                self._process_crafting_recipe_data(table_rows)
-            elif table_name == "extraction_recipe_desc":
-                self._process_extraction_recipe_data(table_rows)
-            elif table_name == "item_list_desc":
-                self._process_item_list_data(table_rows)
 
             # Try to send consolidated compare jobs if we have all necessary data
             self._send_compare_jobs_update()
@@ -161,57 +165,10 @@ class CompareJobsProcessor(BaseProcessor):
         except Exception as e:
             logging.error(f"Error processing toolbelt data: {e}")
 
-    # TODO: Check reference data processor
-    # Right now I'm manually handling some desc tables below, but this might be redundant?
-    def _process_crafting_recipe_data(self, recipe_rows):
-        """Process crafting_recipe_desc data to store crafting recipe info."""
-        try:
-            if not hasattr(self,"_crafting_recipes"):
-                self._crafting_recipes = {}
-
-            for row in recipe_rows:
-                crafting_recipe = CraftingRecipeDesc.from_dict(row)
-                self._crafting_recipes[crafting_recipe.id] = crafting_recipe
-        
-        except Exception as e:
-            logging.error(f"Error processing crafting recipe data: {e}")
-
-    def _process_extraction_recipe_data(self,recipe_rows):
-        """Process extraction_recipe_desc data to store extraction recipe info."""
-        try:
-            if not hasattr(self,"_extraction_recipes"):
-                self._extraction_recipes = {}
-
-            for row in recipe_rows:
-                extraction_recipe = ExtractionRecipeDesc.from_dict(row)
-                self._extraction_recipes[extraction_recipe.id] = extraction_recipe
-        
-        except Exception as e:
-            logging.error(f"Error processing crafting recipe data: {e}")
-
-    def _process_item_list_data(self, item_list_rows):
-        """Process item_list_desc data to store item list info."""
-        try:
-            if not hasattr(self,"_item_lists"):
-                self._item_lists = {}
-
-            for row in item_list_rows:
-                item_list = ItemListDesc.from_dict(row)
-                self._item_lists[item_list.id] = item_list
-        
-        except Exception as e:
-            logging.error(f"Error processing item list data: {e}")
-
     def _send_compare_jobs_update(self):
         """Send consolidated compare jobs update by combining all cached data."""
         try:
-            if not (hasattr(self, "_crafting_recipes") and self._crafting_recipes):
-                return
-            
-            if not (hasattr(self, "_extraction_recipes") and self._extraction_recipes):
-                return
-
-            # Consolidate compare jobs by item
+            # Consolidate compare jobs by job
             consolidated_jobs = self._consolidate_compare_jobs()
 
             # Convert dictionary to list format for UI
@@ -238,10 +195,12 @@ class CompareJobsProcessor(BaseProcessor):
             # TODO: Get actual crafting speed value
             craft_speed = 1.28
             job_type = "Craft"
-            for job_id in self._crafting_recipes:
-                recipe = self._crafting_recipes[job_id]
+            crafting_recipes = self.reference_data.get("crafting_recipe_desc", [])
+            for recipe in crafting_recipes:
+                job_id = recipe["id"]
+
                 try:
-                    primary_out = recipe.crafted_item_stacks[0]
+                    primary_out = recipe["crafted_item_stacks"][0]
                     source = self._source_convert(primary_out[2])
                     job_name = self.item_lookup_service.get_item_name(
                         primary_out[0],source)
@@ -251,8 +210,8 @@ class CompareJobsProcessor(BaseProcessor):
 
                 long_name = self._replace_curly_variables(recipe)
 
-                job_actions = recipe.actions_required
-                job_passive = recipe.is_passive
+                job_actions = recipe["actions_required"]
+                job_passive = recipe["is_passive"]
 
                 # TODO: Get actual skill speeds
                 # Temporary fallback value
@@ -260,23 +219,23 @@ class CompareJobsProcessor(BaseProcessor):
 
                 combined_speed = (craft_speed - 1)+skill_speed
                 # swing_speed is in [seconds/swing], as in the game
-                swing_speed = recipe.time_requirement/combined_speed
+                swing_speed = recipe["time_requirement"]/combined_speed
 
                 # TODO: Get actual tool powers
                 # Temporary fallback value
                 tool_power = 10
 
-                job_actions = recipe.actions_required
+                job_actions = recipe["actions_required"]
                 total_swings = np.ceil(job_actions*swing_speed/tool_power)
 
-                job_time = recipe.time_requirement*total_swings
-                job_stamina = recipe.stamina_requirement*total_swings
-                job_durability = recipe.tool_durability_lost*total_swings
+                job_time = recipe["time_requirement"]*total_swings
+                job_stamina = recipe["stamina_requirement"]*total_swings
+                job_durability = recipe["tool_durability_lost"]*total_swings
 
-                input_stacks = recipe.consumed_item_stacks
+                input_stacks = recipe["consumed_item_stacks"]
                 job_inputs = self._format_input_stacks(input_stacks)
 
-                output_stacks = recipe.crafted_item_stacks
+                output_stacks = recipe["crafted_item_stacks"]
                 job_outputs = self._format_output_stacks(output_stacks)
 
                 try:
@@ -296,12 +255,12 @@ class CompareJobsProcessor(BaseProcessor):
                 # TODO: Better skill/level handling
                 # I would like something more resilient than the simple assumption that
                 # the first skill in the list is the only skill in the list
-                job_level = self._level_convert(recipe.level_requirements[0])
+                job_level = self._level_convert(recipe["level_requirements"][0])
 
-                job_building = recipe.building_requirement
-                job_tool = recipe.tool_requirements
-                job_xp = recipe.experience_per_progress
-                job_hands = recipe.allow_use_hands
+                job_building = recipe["building_requirement"]
+                job_tool = recipe["tool_requirements"]
+                job_xp = recipe["experience_per_progress"]
+                job_hands = recipe["allow_use_hands"]
 
                 raw_operation = {
                     "job_id": f"craft_{job_id}",
@@ -330,19 +289,20 @@ class CompareJobsProcessor(BaseProcessor):
             # TODO: Add extraction recipe info to list of raw_operations
             gather_speed = 1.28
             job_type = "Gather"
-            for job_id in self._extraction_recipes:
-                recipe = self._extraction_recipes[job_id]
+            extraction_recipes = self.reference_data.get("extraction_recipe_desc", [])
+            for recipe in extraction_recipes:
+                job_id = recipe["id"]
                 # In the current state of the game, I only care about extractions from resources
                 # not extractions from cargos
-                if recipe.resource_id==0 or recipe.cargo_id!=0:
+                if recipe["resource_id"]==0 or recipe["cargo_id"]!=0:
                     continue
 
-                resource = self.item_lookup_service.lookup_item_by_id(recipe.resource_id,"resource_desc")
+                resource = self.item_lookup_service.lookup_item_by_id(recipe["resource_id"],"resource_desc")
 
                 job_name = resource["name"]
-                long_name = f"{recipe.verb_phrase} {job_name}"
+                long_name = f"{recipe["verb_phrase"]} {job_name}"
 
-                job_level = self._level_convert(recipe.level_requirements[0])
+                job_level = self._level_convert(recipe["level_requirements"][0])
 
                 # TODO: Get actual skill speeds
                 # Temporary fallback value
@@ -350,7 +310,7 @@ class CompareJobsProcessor(BaseProcessor):
 
                 combined_speed = (gather_speed - 1)+skill_speed
                 # swing_speed is in [seconds/swing], as in the game
-                swing_speed = recipe.time_requirement/combined_speed
+                swing_speed = recipe["time_requirement"]/combined_speed
 
                 # Temporary placeholder values
                 total_swings = 1
@@ -360,7 +320,7 @@ class CompareJobsProcessor(BaseProcessor):
                 job_durability = 0
 
 
-                input_stacks = recipe.consumed_item_stacks
+                input_stacks = recipe["consumed_item_stacks"]
                 job_inputs = self._format_input_stacks(input_stacks)
                 for entry in job_inputs:
                     # Probability of input consumption is (believed to be) on a per-swing basis
@@ -576,30 +536,30 @@ class CompareJobsProcessor(BaseProcessor):
 
     def _replace_curly_variables(self, recipe):
         """Fill in the {0}, {1}, {2} variables in names in recipe names"""
-        job_name = recipe.name
+        job_name = recipe["name"]
         job_name = job_name.replace("{2}","{1}")
 
         if "{1}" in job_name:
             try:
-                primary_in = recipe.consumed_item_stacks[0]
+                primary_in = recipe["consumed_item_stacks"][0]
                 source = self._source_convert(primary_in[2])
                 input_name = self.item_lookup_service.get_item_name(
                     primary_in[0],source)
             except:
                 input_name = "Unknown Item"
-                logging.debug(f"Unresolved input variable in job_id: craft_{recipe.id}")
+                logging.debug(f"Unresolved input variable in job_id: craft_{recipe["id"]}")
             job_name = job_name.replace("{1}",input_name)
             
 
         if "{0}" in job_name:
             try:
-                primary_out = recipe.crafted_item_stacks[0]
+                primary_out = recipe["crafted_item_stacks"][0]
                 source = self._source_convert(primary_out[2])
                 output_name = self.item_lookup_service.get_item_name(
                     primary_out[0],source)
             except:
                 output_name = "Unknown Item"
-                logging.debug(f"Unresolved output variable in job_id: craft_{recipe.id}")
+                logging.debug(f"Unresolved output variable in job_id: craft_{recipe["id"]}")
             job_name = job_name.replace("{0}",output_name)
 
         return job_name
@@ -786,8 +746,8 @@ class CompareJobsProcessor(BaseProcessor):
             # I should really probably be doing all this with dicts or classes,
             # not lists.
             output = []
-            item_list = self._item_lists[item_list_id]
-            possibilities = item_list.possibilities
+            item_list = next(i for i in self.reference_data.get("item_list_desc", []) if i["id"]==item_list_id)
+            possibilities = item_list["possibilities"]
             p_sum = sum(p[0] for p in possibilities)
 
             for possibility in possibilities:
