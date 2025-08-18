@@ -1,7 +1,7 @@
 import json
 from dataclasses import dataclass
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Dict, Optional
 
 
 @dataclass
@@ -1363,11 +1363,28 @@ class ResourceDesc:
     scheduled_respawn_time: float
     not_respawning: bool
 
+    #despawn_inject: Dict[int, float] = {}
+
     @classmethod
     def from_dict(cls, data: dict) -> "ResourceDesc":
         """Create ResourceDesc from subscription data."""
         if not isinstance(data, dict):
             raise ValueError(f"Invalid resource_desc format: expected dict, got {type(data)}")
+        
+        # Manually inject despawn times into specific resource ids,
+        # which for some reason incorrectly describe a time of 0.0
+        despawn_inject: Dict[int, float] = {
+            1110003: 0.25,
+            2110003: 0.25,
+            3110003: 0.25,
+            4110003: 0.25,
+            5110003: 0.25,
+            6110003: 0.25,
+            509854054: 0.25,
+            826362353: 0.25,
+            1006230316: 0.25,
+            1141184831: 0.25,
+        }
 
         return cls(
             id=data.get("id", 0),
@@ -1376,7 +1393,9 @@ class ResourceDesc:
             flattenable=data.get("flattenable", False),
             max_health=data.get("max_health", 0),
             ignore_damage=data.get("ignore_damage", False),
-            despawn_time=data.get("despawn_time", 0.0),
+            despawn_time = despawn_inject.get(
+                data.get("id", 0),
+                float(data.get("despawn_time", 0.0))),
             model_asset_name=data.get("model_asset_name", ""),
             icon_asset_name=data.get("icon_asset_name", ""),
             on_destroy_yield=data.get("on_destroy_yield", []),

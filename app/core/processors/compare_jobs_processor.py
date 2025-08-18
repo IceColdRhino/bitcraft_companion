@@ -226,9 +226,9 @@ class CompareJobsProcessor(BaseProcessor):
                 tool_power = 10
 
                 job_actions = recipe["actions_required"]
-                total_swings = np.ceil(job_actions*swing_speed/tool_power)
+                total_swings = int(np.ceil(job_actions/tool_power))
 
-                job_time = recipe["time_requirement"]*total_swings
+                job_time = swing_speed*total_swings
                 job_stamina = recipe["stamina_requirement"]*total_swings
                 job_durability = recipe["tool_durability_lost"]*total_swings
 
@@ -286,7 +286,8 @@ class CompareJobsProcessor(BaseProcessor):
                 }
                 raw_operations.append(raw_operation)
 
-            # TODO: Add extraction recipe info to list of raw_operations
+            # Add extraction recipe info to list of raw_operations
+            # TODO: Get actual gathering speed value
             gather_speed = 1.28
             job_type = "Gather"
             extraction_recipes = self.reference_data.get("extraction_recipe_desc", [])
@@ -308,16 +309,30 @@ class CompareJobsProcessor(BaseProcessor):
                 # Temporary fallback value
                 skill_speed = 1.09
 
+                # TODO: Get actual tool powers
+                # Temporary fallback value
+                tool_power = 10
+
+                # TODO: Special handling of oeanfish chumming
+
                 combined_speed = (gather_speed - 1)+skill_speed
                 # swing_speed is in [seconds/swing], as in the game
                 swing_speed = recipe["time_requirement"]/combined_speed
 
-                # Temporary placeholder values
-                total_swings = 1
-                job_actions = 1
-                job_time = 1
-                job_stamina = 1
-                job_durability = 0
+                # Default node extraction calculation
+                job_actions = resource["max_health"]
+                total_swings = int(np.ceil(job_actions/tool_power))
+                job_time = swing_speed*total_swings
+
+                # Handle nodes that only live for a limited amount of time
+                # (such as oceanfish nodes)
+                if job_time>resource["despawn_time"]*3600 and resource["despawn_time"]!=0.0:
+                    job_time = resource["despawn_time"]*3600
+                    total_swings = int(np.floor(job_time/swing_speed))
+                    job_actions = total_swings*tool_power
+
+                job_stamina = recipe["stamina_requirement"]*total_swings
+                job_durability = recipe["tool_durability_lost"]*total_swings
 
 
                 input_stacks = recipe["consumed_item_stacks"]
@@ -325,11 +340,22 @@ class CompareJobsProcessor(BaseProcessor):
                 for entry in job_inputs:
                     # Probability of input consumption is (believed to be) on a per-swing basis
                     # so quantity and value fields get multiplied accordingly
-                    entry[2] = total_swings*entry[2]
-                    entry[5] = total_swings*entry[5]
+                    entry[2] = np.round(total_swings*entry[2],4)
+                    entry[5] = np.round(total_swings*entry[5],2)
 
-
+                output_stacks = recipe["extracted_item_stacks"]
                 job_outputs = []
+                for prob in output_stacks:
+                    p = prob[1]
+                    outcome = prob[0][1]
+                    series = self._format_output_stacks([outcome])
+                    for entry in series:
+                        # Probability of output result is on a per-hp basis
+                        # so quantity and value fields get multiplied accordingly
+                        entry[2] = np.round(p*job_actions*entry[2],4)
+                        entry[5] = np.round(p*job_actions*entry[5],2)
+                    job_outputs += series
+                job_outputs.sort(key=lambda x: x[5], reverse=True)
 
                 try:
                     job_cost = sum(i[5] for i in job_inputs)
@@ -639,7 +665,7 @@ class CompareJobsProcessor(BaseProcessor):
                 self._rarity_convert(item["rarity"]),
                 ]
             # Calculate expected quantity
-            row.append(entry[1]*entry[4])
+            row.append(np.round(entry[1]*entry[4],4))
 
             # Calculate price window
             window = self._get_price_window(entry[0],entry[2])
@@ -652,7 +678,7 @@ class CompareJobsProcessor(BaseProcessor):
             row.append(price)
 
             # Calculate row's contribution to overall job value
-            row.append(np.round(row[2]*row[4],4))
+            row.append(np.round(row[2]*price,2))
 
             job_inputs.append(row)
 
@@ -686,7 +712,7 @@ class CompareJobsProcessor(BaseProcessor):
             for entry1 in first_pass:
                 if entry1[0]==entry2[0] and entry1[1]==entry2[1]:
                     q_sum += entry1[2]
-            entry2[2] = np.round(q_sum,6)
+            entry2[2] = np.round(q_sum,4)
 
         third_pass = []
         for entry in second_pass:
@@ -720,7 +746,7 @@ class CompareJobsProcessor(BaseProcessor):
             row.append(price)
 
             # Calculate row's contribution to overall job value
-            row.append(np.round(entry[2]*price,4))
+            row.append(np.round(entry[2]*price,2))
 
             job_outputs.append(row)
 
