@@ -313,8 +313,6 @@ class CompareJobsProcessor(BaseProcessor):
                 # Temporary fallback value
                 tool_power = 10
 
-                # TODO: Special handling of oeanfish chumming
-
                 combined_speed = (gather_speed - 1)+skill_speed
                 # swing_speed is in [seconds/swing], as in the game
                 swing_speed = recipe["time_requirement"]/combined_speed
@@ -398,6 +396,31 @@ class CompareJobsProcessor(BaseProcessor):
                     "profit_per_min": job_pfm,
                 }
                 raw_operations.append(raw_operation)
+
+            # Special handling of oeanfish chumming
+            fish_map = {
+                "extract_1110002": "extract_1110003",
+                "extract_2110002": "extract_2110003",
+                "extract_3110002": "extract_3110003",
+                "extract_4110002": "extract_4110003",
+                "extract_5110002": "extract_5110003",
+                "extract_6110002": "extract_6110003",
+                "extract_1205481710": "extract_653449777",
+                "extract_1049132649": "extract_1534389193",
+                "extract_854631002": "extract_1814132892",
+                "extract_809093509": "extract_304798021",
+            }
+            for key in list(fish_map.keys()):
+                source = next(r for r in raw_operations if r["job_id"]==key)
+                target = next(r for r in raw_operations if r["job_id"]==fish_map[key])
+                source["time_requirement"] += target["time_requirement"]
+                source["stamina_requirement"] += target["stamina_requirement"]
+                source["tool_durability_lost"] += target["tool_durability_lost"]
+                source["output_stacks"] = target["output_stacks"]
+                source["actions_required"] += target["actions_required"]
+                source["gross"] = target["gross"]
+                source["profit"] = source["gross"] - source["cost"]
+                source["profit_per_min"] = 60*source["profit"]/source["time_requirement"]
 
             # Now build the hierarchy
             return self._build_hierarchy(raw_operations)
