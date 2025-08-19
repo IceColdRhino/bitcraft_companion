@@ -127,16 +127,31 @@ class MockProcessor:
 # ========== FIXTURE DATA ==========
 
 def get_mock_reference_data() -> Dict[str, Any]:
-    """Generate mock reference data for testing."""
+    """Generate mock reference data for testing, including ID conflicts for testing resolution."""
     return {
         "item_desc": [
-            {"id": 1, "name": "Wood", "tier": 0},
-            {"id": 2, "name": "Iron Ore", "tier": 1},
-            {"id": 3, "name": "Iron Bar", "tier": 2}
+            {"id": 1, "name": "Wood", "tier": 0, "tag": "Material"},
+            {"id": 2, "name": "Iron Ore", "tier": 1, "tag": "Ore"},
+            {"id": 3, "name": "Iron Bar", "tier": 2, "tag": "Metal"},
+            # Conflicting ID 3001 - should show as "Ancient Journal Page #2" when no cargo heuristics match
+            {"id": 3001, "name": "Ancient Journal Page #2", "tier": 0, "tag": "Journal Page"},
+            # Conflicting ID 1001 - regular item
+            {"id": 1001, "name": "Iron Sword", "tier": 2, "tag": "Weapon"}
+        ],
+        "cargo_desc": [
+            # Conflicting ID 3001 - should be chosen for cargo due to "chunk" heuristic
+            {"id": 3001, "name": "Pyrelite Ore Chunk", "tier": 2, "tag": "Ore Chunk"},
+            # Conflicting ID 1001 - should be chosen due to "package" heuristic  
+            {"id": 1001, "name": "Supply Package", "tier": 1, "tag": "Supplies"},
+            # Non-conflicting cargo items
+            {"id": 4001, "name": "Materials Crate", "tier": 1, "tag": "Cargo"},
+            {"id": 4002, "name": "Equipment Bundle", "tier": 2, "tag": "Bundle"}
         ],
         "resource_desc": [
-            {"id": 10, "name": "Stone", "tier": 0},
-            {"id": 11, "name": "Coal", "tier": 1}
+            {"id": 10, "name": "Stone", "tier": 0, "tag": "Stone"},
+            {"id": 11, "name": "Coal", "tier": 1, "tag": "Fuel"},
+            # Conflicting ID 2001 - should be chosen when no other preferences
+            {"id": 2001, "name": "Oak Wood", "tier": 0, "tag": "Wood"}
         ],
         "crafting_recipe_desc": [
             {
@@ -144,6 +159,12 @@ def get_mock_reference_data() -> Dict[str, Any]:
                 "name": "Iron Bar Recipe",
                 "actions_required": 50,
                 "crafted_item_stacks": [[3, 1]]  # Iron Bar x1
+            },
+            {
+                "id": 101, 
+                "name": "Supply Package Recipe",
+                "actions_required": 25,
+                "crafted_item_stacks": [[1001, 1]]  # Supply Package x1 - should use cargo_desc
             }
         ],
         "building_desc": [

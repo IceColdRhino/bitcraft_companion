@@ -1,8 +1,13 @@
-import customtkinter as ctk
 import logging
+from typing import Dict, List
+
+import customtkinter as ctk
 from tkinter import Menu, ttk
-from typing import List, Dict
+
 from app.ui.components.filter_popup import FilterPopup
+from app.ui.styles import TreeviewStyles
+from app.ui.themes import get_color, register_theme_callback
+from app.services.search_parser import SearchParser
 
 
 class TravelerTasksTab(ctk.CTkFrame):
@@ -11,6 +16,9 @@ class TravelerTasksTab(ctk.CTkFrame):
     def __init__(self, master, app):
         super().__init__(master, fg_color="transparent")
         self.app = app
+        
+        # Register for theme change notifications
+        register_theme_callback(self._on_theme_changed)
 
         # Updated headers - removed Task column, focus on item-based structure
         self.headers = ["Traveler", "Item", "Quantity", "Tier", "Tag", "Status"]
@@ -21,6 +29,9 @@ class TravelerTasksTab(ctk.CTkFrame):
         self.sort_reverse = False
         self.active_filters: Dict[str, set] = {}
         self.clicked_header = None
+        
+        # Initialize search parser
+        self.search_parser = SearchParser()
 
         # Track expansion state for better user experience
         self.has_had_first_load = False
@@ -32,112 +43,21 @@ class TravelerTasksTab(ctk.CTkFrame):
     def _create_widgets(self):
         """Creates the styled Treeview and its scrollbars."""
         style = ttk.Style()
-        style.theme_use("default")
-
-        # Configure the Treeview colors - CONSISTENT WITH OTHER TABS
-        style.configure(
-            "Treeview",
-            background="#2a2d2e",
-            foreground="white",
-            fieldbackground="#343638",
-            borderwidth=0,
-            rowheight=28,
-            relief="flat",
-        )
-        style.map("Treeview", background=[("selected", "#1f6aa5")])
-
-        # Create unique style names to prevent conflicts
-        self.v_scrollbar_style = "TravelerTasks.Vertical.TScrollbar"
-        self.h_scrollbar_style = "TravelerTasks.Horizontal.TScrollbar"
         
-        # Configure custom scrollbar styles
-        style.configure(
-            self.v_scrollbar_style,
-            background="#1e2124",
-            borderwidth=0,
-            arrowcolor="#666",
-            troughcolor="#2a2d2e",
-            darkcolor="#1e2124",
-            lightcolor="#1e2124",
-            width=12,
-        )
-        style.configure(
-            self.h_scrollbar_style,
-            background="#1e2124",
-            borderwidth=0,
-            arrowcolor="#666",
-            troughcolor="#2a2d2e",
-            darkcolor="#1e2124",
-            lightcolor="#1e2124",
-            height=12,
-        )
+        # Apply centralized Treeview styling
+        TreeviewStyles.apply_treeview_style(style)
         
-        # Configure state-specific scrollbar colors to prevent grey appearance when inactive
-        style.map(
-            self.v_scrollbar_style,
-            background=[
-                ("active", "#1e2124"),      # Hover state
-                ("pressed", "#1e2124"),     # Click/drag state  
-                ("disabled", "#1e2124"),    # No scroll needed state
-                ("!active", "#1e2124")      # Normal state
-            ],
-            troughcolor=[
-                ("active", "#2a2d2e"),
-                ("pressed", "#2a2d2e"), 
-                ("disabled", "#2a2d2e"),
-                ("!active", "#2a2d2e")
-            ],
-            arrowcolor=[
-                ("active", "#666"),
-                ("pressed", "#666"),
-                ("disabled", "#666"), 
-                ("!active", "#666")
-            ]
-        )
-        style.map(
-            self.h_scrollbar_style,
-            background=[
-                ("active", "#1e2124"),
-                ("pressed", "#1e2124"),
-                ("disabled", "#1e2124"),
-                ("!active", "#1e2124")
-            ],
-            troughcolor=[
-                ("active", "#2a2d2e"),
-                ("pressed", "#2a2d2e"),
-                ("disabled", "#2a2d2e"),
-                ("!active", "#2a2d2e")
-            ],
-            arrowcolor=[
-                ("active", "#666"),
-                ("pressed", "#666"),
-                ("disabled", "#666"),
-                ("!active", "#666")
-            ]
-        )
-
-        # Configure headers - CONSISTENT WITH OTHER TABS
-        style.configure(
-            "Treeview.Heading",
-            background="#1e2124",
-            foreground="#e0e0e0",
-            font=("Segoe UI", 11, "normal"),
-            padding=(8, 6),
-            relief="flat",
-            borderwidth=0,
-        )
-        style.map("Treeview.Heading", background=[("active", "#2c5d8f")])
+        # Apply centralized scrollbar styling and get style names
+        self.v_scrollbar_style, self.h_scrollbar_style = TreeviewStyles.apply_scrollbar_style(style, "TravelerTasks")
 
         # Create the Treeview with support for child items
         self.tree = ttk.Treeview(self, columns=self.headers, show="tree headings", style="Treeview")
 
-        # Configure tags for different completion statuses
-        self.tree.tag_configure("completed", background="#2d4a2d", foreground="#4CAF50")  # Green for fully completed
-        self.tree.tag_configure("incomplete", background="#2a2d2e", foreground="white")  # Neutral for incomplete
-        self.tree.tag_configure("partial", background="#2a2d2e", foreground="white")  # Neutral for partial
-        self.tree.tag_configure("child", background="#3a3a3a")
-        self.tree.tag_configure("child_completed", background="#3a4a3a", foreground="#4CAF50")  # Green for completed tasks
-        self.tree.tag_configure("child_incomplete", background="#3a3a3a", foreground="white")  # Neutral for incomplete tasks
+        # Apply common tree tags using centralized styling
+        TreeviewStyles.configure_tree_tags(self.tree)
+        
+        # Configure task status tags
+        self._configure_status_tags()
 
         # Create scrollbars with unique styles
         vsb = ttk.Scrollbar(self, orient="vertical", command=self.tree.yview, style=self.v_scrollbar_style)
@@ -189,6 +109,28 @@ class TravelerTasksTab(ctk.CTkFrame):
         # Bind events
         self.tree.bind("<Button-3>", self.show_header_context_menu)
         self.tree.bind("<Configure>", self.on_tree_configure)
+    
+    def _configure_status_tags(self):
+        """Configure status-specific tag colors using current theme."""
+        self.tree.tag_configure("completed", 
+                              background=get_color("TREEVIEW_ALTERNATE"), 
+                              foreground=get_color("STATUS_SUCCESS"))
+        self.tree.tag_configure("child_completed", 
+                              background=get_color("TREEVIEW_ALTERNATE"), 
+                              foreground=get_color("STATUS_SUCCESS"))
+        self.tree.tag_configure("child_incomplete", 
+                              background=get_color("TREEVIEW_ALTERNATE"), 
+                              foreground=get_color("TEXT_PRIMARY"))
+    
+    def _on_theme_changed(self, old_theme: str, new_theme: str):
+        """Handle theme change by updating colors."""
+        # Reapply treeview styling
+        style = ttk.Style()
+        TreeviewStyles.apply_treeview_style(style)
+        TreeviewStyles.configure_tree_tags(self.tree)
+        
+        # Reconfigure status tags with new theme colors
+        self._configure_status_tags()
 
     def on_tree_configure(self, event):
         """Manages horizontal scrollbar visibility with debouncing for smooth resize."""
@@ -220,7 +162,8 @@ class TravelerTasksTab(ctk.CTkFrame):
 
     def _create_context_menu(self):
         """Creates the right-click menu for column headers."""
-        self.header_context_menu = Menu(self, tearoff=0, background="#2a2d2e", foreground="white", activebackground="#1f6aa5")
+        menu_config = TreeviewStyles.get_menu_style_config()
+        self.header_context_menu = Menu(self, **menu_config)
         self.header_context_menu.add_command(label="Filter by...", command=lambda: self._open_filter_popup(self.clicked_header))
         self.header_context_menu.add_command(label="Clear Filter", command=lambda: self.clear_column_filter(self.clicked_header))
 
@@ -442,9 +385,12 @@ class TravelerTasksTab(ctk.CTkFrame):
     def apply_filter(self):
         """
         Filters the master data list based on search and column filters.
-        ENHANCED: Now properly filters individual tasks within traveler groups.
         """
-        search_term = self.app.search_var.get().lower()
+        search_text = self.app.get_search_text()
+        parsed_query = None
+        if search_text:
+            parsed_query = self.search_parser.parse_search_query(search_text)
+        
         temp_data = []
 
         for row in self.all_data:
@@ -487,9 +433,24 @@ class TravelerTasksTab(ctk.CTkFrame):
                                 operation_matches = False
                                 break
 
-                # Apply search filter to individual operations
-                if operation_matches and search_term:
-                    if not self._operation_matches_search(operation, search_term):
+                # Apply keyword-based search filter to individual operations
+                if operation_matches and parsed_query:
+                    # For operations, we need to map some fields for proper searching
+                    # Map various possible field names from the operation data
+                    required_item = operation.get('required_item', '') or operation.get('item', '') or operation.get('name', '')
+                    search_row = {
+                        'name': required_item,
+                        'item': required_item,  # alias
+                        'required_item': required_item,  # original field name
+                        'tier': operation.get('tier', 0),
+                        'quantity': operation.get('quantity', 0) or operation.get('required_quantity', 0),
+                        'tag': operation.get('tag', '') or operation.get('item_tag', ''),
+                        'status': operation.get('completion_status', '') or operation.get('status', ''),
+                        'traveler': row.get('traveler_name', '') or row.get('traveler', ''),  # Include traveler context
+                        # Include all operation fields for broader matching
+                        **operation
+                    }
+                    if not self.search_parser.match_row(search_row, parsed_query):
                         operation_matches = False
 
                 # If operation matches all filters, include it
@@ -510,16 +471,18 @@ class TravelerTasksTab(ctk.CTkFrame):
                             traveler_matches = False
                             break
 
-            # Apply search to traveler level
-            if traveler_matches and search_term and not filtered_operations:
+            # Apply search to traveler level if no operations matched
+            if traveler_matches and parsed_query and not filtered_operations:
                 # If no operations matched search, check if traveler info matches
-                main_fields = ["traveler", "completed", "status"]
-                traveler_search_matches = False
-                for field in main_fields:
-                    if search_term in str(row.get(field, "")).lower():
-                        traveler_search_matches = True
-                        break
-                if not traveler_search_matches:
+                search_row = {
+                    'name': row.get('traveler_name', '') or row.get('traveler', ''),
+                    'traveler': row.get('traveler_name', '') or row.get('traveler', ''),
+                    'completed': row.get('completed', ''),
+                    'status': row.get('status', ''),
+                    # Include all traveler fields for broader matching
+                    **row
+                }
+                if not self.search_parser.match_row(search_row, parsed_query):
                     traveler_matches = False
 
             # Include traveler group if it matches and has matching operations (or no operation-level filters)
@@ -546,7 +509,7 @@ class TravelerTasksTab(ctk.CTkFrame):
                         temp_data.append(filtered_row)
                 else:
                     # No operation-level filters, include as-is (but still apply search to operations)
-                    if search_term and filtered_operations != original_operations:
+                    if parsed_query and filtered_operations != original_operations:
                         filtered_row["operations"] = filtered_operations
                         completed_count = sum(1 for op in filtered_operations if op.get("status") == "✅")
                         total_count = len(filtered_operations)

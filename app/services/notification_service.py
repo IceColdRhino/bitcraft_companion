@@ -6,12 +6,10 @@ Manages notification settings and coordinates with the notification window.
 """
 
 import logging
-import os
 import threading
-from typing import Optional, Dict, Any
+from typing import Dict, Any
 
 # Platform-specific imports (sound handled by Windows natively)
-
 # Native Windows toast notification import
 try:
     from win11toast import toast
@@ -46,6 +44,11 @@ class NotificationService:
         self.main_app = main_app
         self.settings = self._load_notification_settings()
         
+        # Notification bundling system
+        self._pending_passive_items = []  # Buffer for items during bundling window
+        self._bundling_timer = None
+        self.passive_bundling_delay = 2.0  # 2 seconds to wait for more items to bundle
+        
         logging.info("NotificationService initialized")
     
     def _load_notification_settings(self) -> Dict[str, Any]:
@@ -59,7 +62,6 @@ class NotificationService:
                 }
             }
             
-            # TODO: Load from actual player_data.json when persistence is implemented
             return default_settings
             
         except Exception as e:
@@ -87,7 +89,8 @@ class NotificationService:
     
     def show_passive_craft_notification(self, item_name: str, quantity: int = 1):
         """
-        Show a notification for completed passive crafting operations.
+        Show a notification for completed passive crafting operations with bundling protection.
+        Always buffers items and waits for bundling delay to collect multiple completions.
         
         Args:
             item_name: Name of the crafted item
@@ -97,16 +100,75 @@ class NotificationService:
             if not self.settings.get("notifications", {}).get("passive_crafts_enabled", True):
                 return
             
-            title = "Passive Craft Complete!"
-            message = f"{quantity}x {item_name} ready!" if quantity > 1 else f"{item_name} is ready!"
-            icon = "⚗️"
+            # Add item to pending buffer
+            self._pending_passive_items.append({"name": item_name, "quantity": quantity})
+            logging.debug(f"Passive craft notification buffered: {quantity}x {item_name}")
             
-            self._show_notification(title, message, icon)
-                
-            logging.info(f"Passive craft notification shown: {quantity}x {item_name}")
+            # Cancel existing timer if running and start/restart bundling timer
+            if self._bundling_timer:
+                self._bundling_timer.cancel()
+            
+            self._bundling_timer = threading.Timer(self.passive_bundling_delay, self._send_bundled_passive_notification)
+            self._bundling_timer.start()
             
         except Exception as e:
             logging.error(f"Error showing passive craft notification: {e}")
+    
+    def _send_bundled_passive_notification(self):
+        """Send bundled notification for all pending passive craft items."""
+        try:
+            if not self._pending_passive_items:
+                return
+                
+            # Bundle items by name
+            item_counts = {}
+            for item in self._pending_passive_items:
+                item_name = item["name"]
+                quantity = item["quantity"]
+                item_counts[item_name] = item_counts.get(item_name, 0) + quantity
+            
+            # Create notification message
+            if len(item_counts) == 1:
+                # Single item type
+                item_name = list(item_counts.keys())[0]
+                total_quantity = list(item_counts.values())[0]
+                title = "Passive Craft Complete!"
+                message = f"{total_quantity}x {item_name} ready!" if total_quantity > 1 else f"{item_name} is ready!"
+            else:
+                # Multiple item types - create summary
+                item_list = []
+                total_items = 0
+                for item_name, count in item_counts.items():
+                    total_items += count
+                    if count == 1:
+                        item_list.append(item_name)
+                    else:
+                        item_list.append(f"{count}x {item_name}")
+                
+                title = "Multiple Crafts Complete!"
+                if len(item_list) <= 3:
+                    message = f"{', '.join(item_list)} ready!"
+                else:
+                    first_two = ', '.join(item_list[:2])
+                    remaining_types = len(item_list) - 2
+                    message = f"{first_two} and {remaining_types} more types ready!"
+            
+            icon = "🛠️"
+            self._show_notification(title, message, icon)
+            
+            # Log the bundled notification
+            item_summary = ", ".join([f"{count}x {name}" for name, count in item_counts.items()])
+            logging.info(f"Bundled passive craft notification sent: {item_summary}")
+            
+            # Clear pending items and timer
+            self._pending_passive_items.clear()
+            self._bundling_timer = None
+            
+        except Exception as e:
+            logging.error(f"Error sending bundled passive craft notification: {e}")
+            # Clear pending items on error to prevent accumulation
+            self._pending_passive_items.clear()
+            self._bundling_timer = None
     
     def show_active_craft_notification(self, item_name: str, quantity: int = 1):
         """

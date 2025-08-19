@@ -1,14 +1,17 @@
 """
+
 Crafting processor for handling passive_craft_state table updates.
 """
 
-import re
+import json
 import ast
-import time
-import threading
 import logging
+import re
+import threading
+import time
+
 from .base_processor import BaseProcessor
-from app.models import PassiveCraftState, BuildingState, ClaimMemberState
+from app.models import BuildingState, ClaimMemberState, PassiveCraftState
 
 
 class CraftingProcessor(BaseProcessor):
@@ -110,10 +113,14 @@ class CraftingProcessor(BaseProcessor):
 
                         if entity_id in delete_operations:
                             # This is an update (delete+insert)
-                            self._log_crafting_action("UPDATED", insert_data, reducer_name)
+                            recipe_id = insert_data.get("recipe_id")
+                            building_id = insert_data.get("building_entity_id")
+                            logging.debug(f"Passive craft UPDATED: recipe_id={recipe_id}, building_id={building_id}, entity_id={entity_id}")
                         else:
                             # This is a new insert
-                            self._log_crafting_action("STARTED", insert_data, reducer_name)
+                            recipe_id = insert_data.get("recipe_id")
+                            building_id = insert_data.get("building_entity_id")
+                            logging.debug(f"Passive craft STARTED: recipe_id={recipe_id}, building_id={building_id}, entity_id={entity_id}")
 
                         has_crafting_changes = True
 
@@ -125,7 +132,10 @@ class CraftingProcessor(BaseProcessor):
                                 del self._passive_craft_data[entity_id]
 
                             delete_data = delete_operations[entity_id]
-                            self._log_crafting_action("COLLECTED", delete_data, reducer_name)
+                            recipe_id = delete_data.get("recipe_id")
+                            building_id = delete_data.get("building_entity_id")
+                            logging.info(f"Passive craft COLLECTED: recipe_id={recipe_id}, building_id={building_id}, entity_id={entity_id}")
+                            self._cleanup_collected_notification(entity_id)
                             has_crafting_changes = True
 
                 # For other table types, do full refresh if we have changes
@@ -156,8 +166,6 @@ class CraftingProcessor(BaseProcessor):
             for update in table_update.get("updates", []):
                 for insert_str in update.get("inserts", []):
                     try:
-                        import json
-
                         row_data = json.loads(insert_str)
                         table_rows.append(row_data)
                     except json.JSONDecodeError:
@@ -222,47 +230,10 @@ class CraftingProcessor(BaseProcessor):
             logging.warning(f"Error parsing crafting data with dataclass: {e}")
             return None
 
-    def _log_crafting_action(self, action, crafting_data, reducer_name):
-        """
-        Log crafting actions with meaningful information and trigger notifications for completions.
-
-        Extracted from DataService._log_crafting_action()
-        """
-        try:
-            recipe_id = crafting_data["recipe_id"]
-            building_id = crafting_data["building_entity_id"]
-            status = crafting_data["status"]
-
-            # Get recipe name if available
-            recipe_name = f"Recipe {recipe_id}"
-            if self.passive_crafting_service and hasattr(self.passive_crafting_service, "crafting_recipes"):
-                recipe_info = self.passive_crafting_service.crafting_recipes.get(recipe_id, {})
-                recipe_name = recipe_info.get("name", recipe_name)
-                recipe_name = recipe_name.replace("{0}", "").strip()
-
-            # Get building name if available
-            building_name = f"Building {building_id}"
-            claim = getattr(self.inventory_service, "claim", None) if self.inventory_service else None
-            if claim and claim.buildings:
-                for category, buildings in claim.buildings.items():
-                    for building in buildings:
-                        if building.get("entity_id") == building_id:
-                            building_name = building.get("nickname") or building.get("name", building_name)
-                            break
-
-            status_code = status[0] if status and len(status) > 0 else 0
-            status_text = "READY" if status_code == 2 else "IN_PROGRESS" if status_code == 1 else "UNKNOWN"
-
-            # Clean up notification tracking when item is collected
-            if action == "COLLECTED":
-                collected_entity_id = crafting_data.get("entity_id")
-                if collected_entity_id and collected_entity_id in self.notified_ready_items:
-                    self.notified_ready_items.remove(collected_entity_id)
-
-            logging.info(f"Passive craft {action}: {recipe_name} at {building_name} ({status_text})")
-
-        except Exception as e:
-            logging.warning(f"Error logging crafting action: {e}")
+    def _cleanup_collected_notification(self, entity_id):
+        """Remove entity from notification tracking when item is collected."""
+        if entity_id and entity_id in self.notified_ready_items:
+            self.notified_ready_items.remove(entity_id)
 
     def _get_item_name_from_recipe(self, recipe_id: int) -> str:
         """
@@ -291,8 +262,15 @@ class CraftingProcessor(BaseProcessor):
 
                 if isinstance(first_item, list) and len(first_item) >= 2:
                     item_id = first_item[0]
-                    item_name = self.item_lookup_service.get_item_name(item_id)
-                    return item_name
+                    # Use compound key system for item lookup
+                    found_items = self.item_lookup_service.find_items_by_id(item_id)
+                    
+                    if found_items:
+                        # Use first found item (compound key system prevents overwrites)
+                        item_info = found_items[0]
+                        return item_info.get("name", f"Item {item_id}")
+                    else:
+                        return f"Item {item_id}"
             else:
                 # Fallback to recipe name if no crafted items
                 return re.sub(r"\{\d+\}", "", recipe_name).strip()
@@ -304,32 +282,6 @@ class CraftingProcessor(BaseProcessor):
             return f"Recipe {recipe_id}"
 
 
-    def _determine_preferred_item_source(self, recipe_info):
-        """
-        Determine the preferred item source based on recipe context.
-
-        Args:
-            recipe_info: Recipe information dictionary
-
-        Returns:
-            str: Preferred source ("item_desc", "cargo_desc", "resource_desc") or None
-        """
-        try:
-            recipe_name = recipe_info.get("name", "").lower()
-
-            # Heuristics to determine if this is likely a cargo item
-            cargo_indicators = ["pack", "package", "bundle", "crate", "supplies", "materials", "goods", "cargo", "shipment"]
-
-            for indicator in cargo_indicators:
-                if indicator in recipe_name:
-                    return "cargo_desc"
-
-            # Default to item_desc for most crafting
-            return "item_desc"
-
-        except Exception as e:
-            logging.error(f"Error determining preferred source: {e}")
-            return None
 
     def _trigger_bundled_passive_craft_notifications(self, newly_ready_items):
         """Trigger bundled passive craft completion notifications for multiple items."""
@@ -480,22 +432,25 @@ class CraftingProcessor(BaseProcessor):
                         self.notified_ready_items.add(entity_id)
 
                     # Also check by calculating time remaining for extra safety
-                    elif timestamp_micros and craft_data.get("recipe_id"):
+                    elif craft_data.get("recipe_id"):
                         try:
-                            recipe_id = craft_data.get("recipe_id")
-                            if self.reference_data:
-                                recipes = self.reference_data.get("crafting_recipe_desc", [])
-                                for recipe in recipes:
-                                    if recipe.get("id") == recipe_id:
-                                        duration_seconds = recipe.get("time_requirement", 0)
-                                        start_time = timestamp_micros / 1_000_000
-                                        current_time = time.time()
-                                        elapsed_time = current_time - start_time
-                                        remaining_time = duration_seconds - elapsed_time
+                            # Extract timestamp using helper function
+                            timestamp_micros = craft_data.get("timestamp_micros")
+                            if timestamp_micros:
+                                recipe_id = craft_data.get("recipe_id")
+                                if self.reference_data:
+                                    recipes = self.reference_data.get("crafting_recipe_desc", [])
+                                    for recipe in recipes:
+                                        if recipe.get("id") == recipe_id:
+                                            duration_seconds = recipe.get("time_requirement", 0)
+                                            start_time = timestamp_micros / 1_000_000
+                                            current_time = time.time()
+                                            elapsed_time = current_time - start_time
+                                            remaining_time = duration_seconds - elapsed_time
 
-                                        if remaining_time <= 0:
-                                            self.notified_ready_items.add(entity_id)
-                                        break
+                                            if remaining_time <= 0:
+                                                self.notified_ready_items.add(entity_id)
+                                            break
                         except Exception as e:
                             logging.warning(f"Error checking passive craft completion time for {entity_id}: {e}")
 
@@ -598,11 +553,11 @@ class CraftingProcessor(BaseProcessor):
 
         self.timer_thread = threading.Thread(target=self._timer_loop, daemon=True)
         self.timer_thread.start()
-        logging.info("Started real-time crafting countdown timer in processor")
+        logging.debug("Started real-time crafting countdown timer in processor")
 
     def stop_real_time_timer(self):
         """Stop the real-time countdown timer with improved cleanup."""
-        logging.info("Stopping real-time crafting countdown timer in processor...")
+        logging.debug("Stopping real-time crafting countdown timer in processor...")
 
         try:
             if self.timer_thread:
@@ -623,7 +578,7 @@ class CraftingProcessor(BaseProcessor):
         except Exception as e:
             logging.error(f"Error stopping timer thread: {e}")
         finally:
-            logging.info("Real-time timer shutdown complete")
+            logging.debug("Real-time timer shutdown complete")
 
     def _timer_loop(self):
         """Background thread that updates timers every second."""
@@ -709,6 +664,7 @@ class CraftingProcessor(BaseProcessor):
         except Exception as e:
             logging.error(f"Error updating timers: {e}")
 
+
     def _calculate_current_time_remaining(self, operation):
         """
         Calculate the current time remaining for a crafting operation.
@@ -741,7 +697,7 @@ class CraftingProcessor(BaseProcessor):
             recipe = recipe_lookup[recipe_id]
             duration_seconds = recipe.get("time_requirement", 0)
 
-            # Get timestamp - handle multiple formats
+            # Get timestamp - now available directly from dataclass to_dict()
             timestamp_micros = operation.get("timestamp_micros")
             if not timestamp_micros:
                 return "In Progress"
@@ -941,12 +897,25 @@ class CraftingProcessor(BaseProcessor):
                         item_id = item_stack[0]
                         quantity = item_stack[1]
 
-                        # Look up item details using shared lookup service with preferred source
-                        preferred_source = self._determine_preferred_item_source(recipe_info)
-                        item_info = self.item_lookup_service.lookup_item_by_id(item_id, preferred_source)
-                        item_name = item_info.get("name", f"Unknown Item {item_id}") if item_info else f"Unknown Item {item_id}"
-                        item_tier = item_info.get("tier", 0) if item_info else 0
-                        item_tag = item_info.get("tag", "") if item_info else ""
+                        # Look up item details using compound key system
+                        found_items = self.item_lookup_service.find_items_by_id(item_id)
+                        
+                        if found_items:
+                            # Use first found item (compound key system prevents overwrites)
+                            item_info = found_items[0]
+                            item_name = item_info.get("name", f"Unknown Item {item_id}")
+                            item_tier = item_info.get("tier", 0)
+                            item_tag = item_info.get("tag", "")
+                            
+                            # Log when there are multiple items for debugging
+                            if len(found_items) > 1:
+                                all_names = [item.get("name", "") for item in found_items]
+                                logging.debug(f"[CraftingProcessor] Item {item_id} has multiple matches: {all_names}, using: '{item_name}'")
+                        else:
+                            item_name = f"Unknown Item {item_id}"
+                            item_tier = 0
+                            item_tag = ""
+                            logging.warning(f"[CraftingProcessor] Item {item_id} not found in any reference table")
                     else:
                         logging.warning(f"Invalid item_stack format: {item_stack} - skipping")
                         continue
@@ -1326,10 +1295,6 @@ class CraftingProcessor(BaseProcessor):
 
             # Sort by item name for consistent display
             formatted_list.sort(key=lambda x: x.get("item", "").lower())
-
-            # for item in formatted_list:
-            #         f"[CRAFTING DEBUG] Item '{item.get('item')}': tier={item.get('tier')}, qty={item.get('total_quantity')}, time='{item.get('time_remaining')}', crafter='{item.get('crafter')}', building='{item.get('building_name')}'"
-            #     )
 
             return formatted_list
 

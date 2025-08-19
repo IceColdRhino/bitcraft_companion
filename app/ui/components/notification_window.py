@@ -5,9 +5,8 @@ Shows pop-up notifications for craft completions with auto-dismiss functionality
 Uses Windows default positioning and modern styling.
 """
 
-import customtkinter as ctk
 import logging
-from typing import Optional
+import customtkinter as ctk
 
 
 class NotificationWindow(ctk.CTkToplevel):
@@ -210,10 +209,6 @@ class NotificationWindow(ctk.CTkToplevel):
             self.deiconify()  # Show window if minimized
             self.lift()       # Bring to front
             self.focus_set()  # Set focus (but don't steal from other apps)
-            
-            # Optional: Add a subtle animation or effect
-            # self.attributes("-alpha", 0.0)  # Start transparent
-            # self._fade_in()  # Fade in effect
             
         except Exception as e:
             logging.error(f"Error showing notification: {e}")

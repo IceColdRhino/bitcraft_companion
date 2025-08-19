@@ -1,16 +1,17 @@
+"""
+Manages multiple claims for a player, handles claim switching,
+and provides claim data caching and persistence.
+"""
+
 import json
 import logging
 import time
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional
+
 from ..core.data_paths import get_user_data_path
 
 
 class ClaimService:
-    """
-    Manages multiple claims for a player, handles claim switching,
-    and provides claim data caching and persistence.
-    """
-
     def __init__(self, client, query_service):
         """
         Initialize the ClaimService with a BitCraft client for data operations.

@@ -3,6 +3,77 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.30]
+### Added
+- Implemented ReferenceCacheService for local caching of reference data.
+- Methods for caching, retrieving, validating, and clearing reference data with version tracking and TTL.
+- MainWindow caching optimizations, including cached button styles and keyword examples for improved UI responsiveness.
+- Background processing for filtering and sorting in ClaimInventoryTab to efficiently handle large datasets.
+- Callbacks for background task completion and error handling to ensure a smooth user experience.
+
+## [0.2.28]
+### Added
+- Improved save and load for searches
+- Comprehensive tests for SavedSearchService
+
+### Fixed
+- Item overwrites due to conflicting IDs (for real this time!)
+
+### Refactored
+- Simplified reference data handling in InventoryProcessor
+- Removed unused item type determination methods
+- Simplified reference data handling in InventoryProcessor
+
+## [0.2.27]
+### Added
+- **Enhanced Search with Keywords & Comparison Operators**: Revolutionary search system with keyword-based filtering across all tabs
+  - **Keywords**: `item=`, `tier=`, `quantity=`/`qty=`, `tag=`, `container=`, `building=`, `crafter=`, `traveler=`, `status=`
+  - **Comparison Operators**: `=`, `>`, `<`, `>=`, `<=`, `!=` for both string and numeric fields
+  - **Multiple Conditions**: Support multiple conditions per field with AND logic (e.g., `item=log item!=package qty<500`)
+  - **Examples**: `item=plank tier>3 qty<100`, `container=carving`, `building!=workshop`, `tier>2 tier<6`
+  - **Smart Field Detection**: Automatically handles numeric vs string comparisons
+  - **Backward Compatible**: Regular search terms still work alongside keywords
+  - **Tab-Specific Placeholders**: Contextual search examples for each tab
+  - **Container Search**: Special handling for searching within container dictionaries
+  - **Traveler Tasks**: Enhanced nested search showing parent travelers when child operations match
+
+## [0.2.26]
+### Added
+- QoL: Escape key keybind to clear search text
+
+## [0.2.25]
+### Fixed
+- Enhance inventory processing with preferred item source resolution to prevent inventory overwrites
+
+## [0.2.23]
+### Added
+- Theme-aware styling and centralized theme management via ThemeManager
+- Dynamic theme support in MainWindow, ClaimInfoHeader, FilterPopup, and SettingsWindow
+- Improved search bar functionality (supports ctrl+delete and ctrl+backspace)
+- Refactored TreeviewStyles for consistent dynamic colors
+- Activity logging service with inventory change tracking, player attribution, timestamps, color indicators, and background log rotation
+- ActivityWindow for viewing recent inventory changes, with dynamic search placeholder and quick access button in ClaimInfoHeader
+
+### Changed
+- Consistent window title in ActivityWindow
+
+## [0.2.22]
+### Added
+- Implement comprehensive data refresh and retry mechanism for task updates
+- Add PassiveCraftingTab and refactor TravelerTasksTab for consistent styling
+- Implement notification bundling for passive crafting notifications
+- Add `timestamp_micros` property to PassiveCraftState for enhanced timestamp handling
+
+### Changed
+- Moved reference queries to their own function for improved performance and compartmentalization
+- Reorganize import statements for improved clarity and consistency
+- Clean up imports and enhance code organization in UI components
+- Update class docstring format in ClaimService for consistency
+- Remove redundant import statements and enhance data loading in processors
+
+### Removed
+- Remove obsolete database file from the project
+
 ## [0.2.21]
 ### Changed
 - Refactored service instantiation patches and adjusted user ID assignment for refactored architecture 
@@ -10,11 +81,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Simplified tile cost data initialization in ClaimInfoHeader and removed loading method 
 - Removed ClaimMember and Player classes 
 - Removed TravelerTasksService class and its associated methods for handling traveler tasks data processing and real-time updates 
+
 ### Added
 - Enhanced DataService and MessageRouter with improved logging and validation features 
 - Enhanced ItemLookupService to support building and recipe lookups 
 - Refactored processors to utilize dataclasses for improved data handling 
 - Added additional one-time subscription queries to QueryService 
+
 ### Fixed
 - Improved logging messages for WebSocket and keyring operations 
 

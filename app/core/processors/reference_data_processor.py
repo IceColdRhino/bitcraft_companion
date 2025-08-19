@@ -5,6 +5,7 @@ Processes static game data tables (resource_desc, item_desc, etc.) from Spacetim
 to replace SQLite-based reference data loading.
 """
 
+import json
 import logging
 from .base_processor import BaseProcessor
 from app.models import (
@@ -45,10 +46,72 @@ class ReferenceDataProcessor(BaseProcessor):
             "npc_desc": NpcDesc,
             "building_function_type_mapping_desc": BuildingFunctionTypeMappingDesc,
         }
+        
+        # Process initial reference data loaded via one-off queries
+        self._process_initial_reference_data()
 
     def get_table_names(self):
-        """Return list of reference data table names this processor handles."""
-        return list(self._table_dataclass_map.keys())
+        """
+        Return list of reference data table names this processor handles via subscriptions.
+        
+        Returns empty list since reference data is now loaded via one-off queries
+        instead of subscriptions. Only dynamic transaction updates are subscribed to.
+        """
+        return []  # No subscription tables - reference data loaded via one-off queries
+
+    def _process_initial_reference_data(self):
+        """
+        Process initial reference data loaded via one-off queries.
+        
+        Converts raw reference data to dataclasses and updates caches.
+        Called during processor initialization.
+        """
+        try:
+            if not self.reference_data:
+                logging.warning("No reference data provided to ReferenceDataProcessor")
+                return
+                
+            total_processed = 0
+            
+            for table_name, dataclass_type in self._table_dataclass_map.items():
+                table_data = self.reference_data.get(table_name, [])
+                
+                if not table_data:
+                    logging.debug(f"No data found for {table_name}")
+                    continue
+                    
+                # Process all rows for this table
+                reference_items = []
+                failed_count = 0
+                
+                for row in table_data:
+                    try:
+                        # Create dataclass instance from dictionary
+                        reference_item = dataclass_type.from_dict(row)
+                        if reference_item:
+                            reference_items.append(reference_item)
+                        else:
+                            failed_count += 1
+                    except Exception as e:
+                        logging.debug(f"Failed to create {table_name} dataclass from row: {e}")
+                        failed_count += 1
+                
+                # Store in cache
+                self._reference_cache[table_name] = reference_items
+                total_processed += len(reference_items)
+                
+                logging.info(f"Processed {len(reference_items)} {table_name} items to dataclasses")
+                
+                if failed_count > 0:
+                    logging.warning(f"Failed to parse {failed_count} {table_name} rows")
+                
+                # Notify that this table is loaded
+                self._notify_reference_data_loaded(table_name, len(reference_items))
+            
+            logging.info(f"Reference data processing completed: {total_processed} total items converted to dataclasses")
+            
+        except Exception as e:
+            logging.error(f"Error processing initial reference data: {e}")
 
     def process_transaction(self, table_update, reducer_name, timestamp):
         """
@@ -93,7 +156,6 @@ class ReferenceDataProcessor(BaseProcessor):
                 for delete_str in deletes:
                     try:
                         # Parse the delete to get the entity ID
-                        import json
                         delete_data = json.loads(delete_str)
                         entity_id = delete_data.get("id") or delete_data.get("entity_id")
                         
@@ -134,7 +196,6 @@ class ReferenceDataProcessor(BaseProcessor):
             for update in table_update.get("updates", []):
                 for insert_str in update.get("inserts", []):
                     try:
-                        import json
                         row_data = json.loads(insert_str)
                         table_rows.append(row_data)
                     except json.JSONDecodeError:

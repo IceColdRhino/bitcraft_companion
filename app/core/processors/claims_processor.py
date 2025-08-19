@@ -1,10 +1,10 @@
 """
 Claims processor for handling claim state table updates.
 """
-
+import ast
 import json
 import logging
-import time
+
 from .base_processor import BaseProcessor
 from app.models import ClaimLocalState, ClaimState, ClaimMemberState
 
@@ -106,8 +106,6 @@ class ClaimsProcessor(BaseProcessor):
             for update in table_update.get("updates", []):
                 for insert_str in update.get("inserts", []):
                     try:
-                        import json
-
                         row_data = json.loads(insert_str)
                         table_rows.append(row_data)
                     except:
@@ -344,7 +342,6 @@ class ClaimsProcessor(BaseProcessor):
         Position: 0=entity_id, 1=supplies, 2=building_maintenance, 3=num_tiles, 4=num_tile_neighbors, 5=location, 6=treasury, 7=xp_gained_since_last_coin_minting, 8=supplies_purchase_threshold, 9=supplies_purchase_price, 10=building_description_id
         """
         try:
-            import ast
 
             data = ast.literal_eval(data_str)
             if not isinstance(data, list) or len(data) < 11:
@@ -388,8 +385,6 @@ class ClaimsProcessor(BaseProcessor):
         Example: [360287970203715017, 576460752315731874, 360287970203714996, "Retirement Home T4", false]
         """
         try:
-            import ast
-
             data = ast.literal_eval(data_str)
             if not isinstance(data, list) or len(data) < 5:
                 return None

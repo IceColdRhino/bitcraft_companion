@@ -8,6 +8,7 @@ from .processors import InventoryProcessor, CraftingProcessor, TasksProcessor, C
 from .utils import ItemLookupService
 from ..services.notification_service import NotificationService
 from ..services.claim_service import ClaimService
+from ..services.background_processor import BackgroundProcessor
 from ..client.query_service import QueryService
 from ..models.claim import Claim
 
@@ -42,6 +43,9 @@ class DataService:
         self.message_router = None
         self.processors = []
 
+        # Background processing
+        self.background_processor = None
+
         self.data_queue = queue.Queue()
         self._stop_event = threading.Event()
         self.service_thread = None
@@ -50,6 +54,10 @@ class DataService:
         """Set the main app reference and initialize notification service."""
         self.main_app = main_app
         self.notification_service = NotificationService(main_app)
+        
+        # Set up main thread scheduler for background processor if initialized
+        if self.background_processor and hasattr(main_app, 'after'):
+            self.background_processor.set_main_thread_scheduler(main_app.after)
 
     def start(self, username, password, region, player_name):
         """Starts the data fetching thread with user credentials."""
@@ -71,8 +79,13 @@ class DataService:
             if hasattr(self, "processors"):
                 for processor in self.processors:
                     if hasattr(processor, "stop_real_time_timer"):
-                        logging.info(f"Stopping timer for {processor.__class__.__name__}...")
+                        logging.debug(f"Stopping timer for {processor.__class__.__name__}...")
                         processor.stop_real_time_timer()
+
+            # Shutdown background processor
+            if self.background_processor:
+                logging.info("Shutting down background processor...")
+                self.background_processor.shutdown(wait=True, timeout=10.0)
 
             if self.claim_manager:
                 logging.info("Saving claims cache...")
@@ -126,7 +139,7 @@ class DataService:
                 return
 
             total_startup_time = time.time() - thread_start_time
-            logging.info(f"BitCraft Companion ready! Startup completed in {total_startup_time:.1f}s")
+            logging.info("BitCraft Companion ready!")
             logging.info("Monitoring for game data updates...")
 
             # Keep thread alive
@@ -165,7 +178,6 @@ class DataService:
                 return False
 
             auth_time = time.time() - auth_start
-            logging.debug(f"[DEBUG] Authentication completed in {auth_time:.3f}s")
             return True
 
         except Exception as e:
@@ -190,13 +202,11 @@ class DataService:
             self.client.set_region(region)
             self.client.set_endpoint("subscribe")
             self.client.set_websocket_uri()
-            logging.debug(f"[DEBUG] Connection configured for region: {region}")
 
             # Test basic connectivity first
             logging.info("Testing server connectivity...")
             if not self.client.test_server_connectivity():
                 # Run full diagnostics if basic connectivity fails
-                logging.debug("[DEBUG] Running connection diagnostics...")
                 self.client.diagnose_connection_issues()
 
                 error_msg = "Server connectivity test failed. Check your internet connection and try again."
@@ -210,7 +220,6 @@ class DataService:
             logging.info("Connecting to BitCraft servers...")
             self.client.connect_websocket_with_retry(max_retries=3, base_delay=2.0)
             ws_time = time.time() - ws_start
-            logging.debug(f"[DEBUG] WebSocket connection established in {ws_time:.3f}s")
             self.data_queue.put({"type": "connection_status", "data": {"status": "connected"}})
             return True
 
@@ -232,10 +241,6 @@ class DataService:
         try:
             # Set player info directly
             self.username = player_name
-            logging.debug(f"[DEBUG] Player name set: {player_name}")
-
-            # Reference data is now loaded via subscriptions through ReferenceDataProcessor
-            logging.info("Reference data will be loaded via subscriptions")
 
             # Get user ID
             user_start = time.time()
@@ -248,16 +253,21 @@ class DataService:
                 return None, None, None
             self.user_id = user_id
             user_time = time.time() - user_start
-            logging.debug(f"[DEBUG] User ID retrieved in {user_time:.3f}s")
 
-            # Initialize claim manager
-            logging.debug("[DEBUG] Initializing claim manager")
+            # Initialize claim manager and query service
             query_service = QueryService(self.client)
             self.claim_manager = ClaimService(self.client, query_service)
+            
+            # Load reference data via one-off queries 
+            ref_start = time.time()
+            logging.debug("Loading reference data...")
+            reference_data = query_service.get_reference_data()
+            ref_time = time.time() - ref_start
+            logging.debug(f"Reference data loaded in {ref_time:.3f}s")
 
             # Fetch all claims for the user using query service
             claims_start = time.time()
-            logging.info("Loading your claims...")
+            logging.debug("Loading your claims...")
             all_claims = self.claim_manager.fetch_all_user_claims(self.user_id)
             if not all_claims:
                 logging.error(f"No claims found for player: {player_name}")
@@ -266,8 +276,7 @@ class DataService:
                 return None, None, None
 
             claims_time = time.time() - claims_start
-            logging.info(f"Found {len(all_claims)} claims")
-            logging.debug(f"[DEBUG] Claims loaded in {claims_time:.3f}s")
+            logging.debug(f"Found {len(all_claims)} claims")
 
             # Standardize claim keys for UI compatibility
             for claim in all_claims:
@@ -298,7 +307,7 @@ class DataService:
             self.claim = Claim()
             self.claim.claim_id = current_claim["entity_id"]
 
-            return {}, all_claims, current_claim  # Empty dict for backward compatibility
+            return reference_data, all_claims, current_claim
 
         except Exception as e:
             logging.error(f"[DataService] Error initializing player and claims: {e}")
@@ -318,6 +327,14 @@ class DataService:
         try:
             # Note: TravelerTasksService was removed - TasksProcessor handles all traveler task functionality
 
+            # Initialize background processor for heavy operations
+            self.background_processor = BackgroundProcessor(max_workers=3)
+            logging.info(f"[DataService] BackgroundProcessor initialized with 3 workers")
+            
+            # Set up main thread scheduler if main app is available
+            if self.main_app and hasattr(self.main_app, 'after'):
+                self.background_processor.set_main_thread_scheduler(self.main_app.after)
+
             # Initialize shared utilities
             item_lookup_service = ItemLookupService(reference_data)
             logging.debug(f"[DataService] ItemLookupService initialized with {item_lookup_service.get_stats()}")
@@ -329,6 +346,7 @@ class DataService:
                 "claim": self.claim,
                 "item_lookup_service": item_lookup_service,
                 "data_service": self,
+                "background_processor": self.background_processor,
             }
 
             self.processors = [
@@ -343,11 +361,14 @@ class DataService:
 
             self.message_router = MessageRouter(self.processors, self.data_queue)
 
-            # Start real-time timers in processors
+            # Start real-time timers in processors and load initial data
             for processor in self.processors:
                 # Start timer for crafting processor (passive crafting)
                 if hasattr(processor, "start_real_time_timer"):
                     processor.start_real_time_timer(self._handle_timer_update)
+                # Load initial task data for tasks processor
+                elif hasattr(processor, "load_initial_task_data"):
+                    processor.load_initial_task_data()
 
             return True
 
@@ -578,7 +599,7 @@ class DataService:
                         "data": {"claims": updated_claims, "current_claim_id": self.claim_manager.current_claim_id},
                     }
                 )
-                logging.info(f"Claims list refreshed: {len(updated_claims)} claims")
+                logging.debug(f"Claims list refreshed: {len(updated_claims)} claims")
                 return True
             else:
                 logging.warning("No claims found during refresh")
@@ -586,4 +607,57 @@ class DataService:
 
         except Exception as e:
             logging.error(f"Error refreshing claims list: {e}")
+            return False
+
+    def refresh_all_data(self):
+        """
+        Comprehensive data refresh including both reference data and current claim data.
+        
+        Returns:
+            bool: True if refresh succeeded, False otherwise
+        """
+        try:
+            logging.info("[DataService] Starting comprehensive data refresh...")
+            
+            # Stop active subscriptions to free the WebSocket for one-off queries
+            logging.info("[DataService] Stopping subscriptions for reference data refresh...")
+            if self.client:
+                self.client.stop_subscriptions()
+            
+            # Refresh reference data while WebSocket is free
+            query_service = QueryService(self.client) 
+            logging.info("[DataService] Refreshing reference data...")
+            reference_data = query_service.get_reference_data()
+            
+            # Update reference data in all processors
+            for processor in self.processors:
+                processor.reference_data = reference_data
+                
+            # Update ItemLookupService with fresh reference data
+            item_lookup_service = None
+            for processor in self.processors:
+                if hasattr(processor, 'services') and processor.services:
+                    item_lookup_service = processor.services.get("item_lookup_service")
+                    if item_lookup_service:
+                        break
+                    
+            if item_lookup_service:
+                item_lookup_service.refresh_lookups(reference_data)
+                logging.info("[DataService] ItemLookupService refreshed with new reference data")
+                
+            logging.info("[DataService] Reference data refresh completed")
+            
+            # Refresh current claim data (restart subscriptions)
+            logging.info("[DataService] Refreshing current claim data...")
+            claim_success = self.refresh_current_claim_data()
+            
+            if claim_success:
+                logging.info("[DataService] Comprehensive data refresh completed successfully")
+                return True
+            else:
+                logging.warning("[DataService] Claim data refresh failed during comprehensive refresh")
+                return False
+                
+        except Exception as e:
+            logging.error(f"[DataService] Error during comprehensive data refresh: {e}")
             return False

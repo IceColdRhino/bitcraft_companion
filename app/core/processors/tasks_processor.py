@@ -2,13 +2,14 @@
 Tasks processor for handling traveler_task_state table updates.
 """
 
-from datetime import datetime
 import json
-import time
 import logging
 import threading
-from .base_processor import BaseProcessor
+import time
+from datetime import datetime
+
 from app.models import TravelerTaskState
+from .base_processor import BaseProcessor
 
 
 class TasksProcessor(BaseProcessor):
@@ -36,16 +37,14 @@ class TasksProcessor(BaseProcessor):
 
         # Task timer data from traveler_task_loop_timer
         self._task_timer_data = {}
-        
-        # Timer management for one-off queries
-        self._timer_thread = None
-        self._timer_stop_event = threading.Event()
-        self._ui_update_callback = None
-        self._last_timer_query_time = 0
-        self._current_task_expiration = 0
-        
-        # Configuration - can be adjusted for testing
-        self.TASK_TIMER_VERIFICATION_INTERVAL = 1800  # 30 minutes in seconds
+
+        # Exponential backoff retry mechanism for task timer failures
+        self._retry_count = 0
+        self._max_retries = 5
+        self._base_delay = 5  # seconds
+        self._max_delay = 60  # seconds
+        self._retry_timer = None
+        self._retry_in_progress = False
 
     def get_table_names(self):
         """Return list of table names this processor handles."""
@@ -53,7 +52,7 @@ class TasksProcessor(BaseProcessor):
 
     def process_transaction(self, table_update, reducer_name, timestamp):
         """
-        Handle traveler_task_state and traveler_task_desc transactions.
+        Handle traveler_task_state transactions.
 
         Process incremental changes and update cached data without wiping UI.
         """
@@ -70,7 +69,7 @@ class TasksProcessor(BaseProcessor):
                 deletes = update.get("deletes", [])
 
                 if inserts or deletes:
-                    logging.info(f"TASK TRANSACTION: {len(inserts)} inserts, {len(deletes)} deletes - {reducer_name}")
+                    logging.debug(f"TASK TRANSACTION: {len(inserts)} inserts, {len(deletes)} deletes - {reducer_name}")
                     data_changed = True
 
                     # Handle different table types
@@ -83,7 +82,7 @@ class TasksProcessor(BaseProcessor):
 
             # Log task completions with safe encoding
             for completed_task in completed_tasks:
-                logging.info(f"[TasksProcessor] Task {completed_task['task_id']} completed via {completed_task['reducer_name']}")
+                logging.debug(f"[TasksProcessor] Task {completed_task['task_id']} completed via {completed_task['reducer_name']}")
 
             # Check if this looks like a reset (large number of operations)
             total_operations = sum(len(update.get("inserts", [])) + len(update.get("deletes", [])) for update in updates)
@@ -124,8 +123,6 @@ class TasksProcessor(BaseProcessor):
             for update in table_update.get("updates", []):
                 for insert_str in update.get("inserts", []):
                     try:
-                        import json
-
                         row_data = json.loads(insert_str)
                         table_rows.append(row_data)
                     except json.JSONDecodeError:
@@ -135,7 +132,7 @@ class TasksProcessor(BaseProcessor):
                 logging.debug(f"No rows in {table_name} subscription update")
                 return
 
-            logging.info(f"TASK SUBSCRIPTION: Processing {len(table_rows)} rows from {table_name}")
+            logging.debug(f"TASK SUBSCRIPTION: Processing {len(table_rows)} rows from {table_name}")
 
             # Handle different table types
             if table_name == "traveler_task_state":
@@ -165,7 +162,7 @@ class TasksProcessor(BaseProcessor):
 
                 # Check if reset is complete (both key tables updated)
                 if "traveler_task_state" in self._reset_tables_updated and "traveler_task_desc" in self._reset_tables_updated:
-                    logging.info("TASK RESET: Both task tables updated, completing reset")
+                    logging.debug("TASK RESET: Both task tables updated, completing reset")
                     self._complete_reset()
                     return
                 else:
@@ -200,12 +197,14 @@ class TasksProcessor(BaseProcessor):
                 try:
                     # Create TravelerTaskState dataclass instance
                     task_state = TravelerTaskState.from_dict(row)
-                    
-                    # Store using task_id as key, converting back to dict for compatibility
-                    self._task_states[task_state.task_id] = {
+
+                    # Store using entity_id as key (unique per task assignment) instead of task_id
+                    # This fixes the Rumbagh 4-task issue where multiple entity_ids had same task_id
+                    self._task_states[task_state.entity_id] = {
                         "entity_id": task_state.entity_id,
                         "player_entity_id": task_state.player_entity_id,
                         "traveler_id": task_state.traveler_id,
+                        "task_id": task_state.task_id,  # Include task_id for task description lookup
                         "completed": task_state.completed,
                     }
                 except (ValueError, TypeError) as e:
@@ -214,6 +213,8 @@ class TasksProcessor(BaseProcessor):
 
         except Exception as e:
             logging.error(f"Error processing task state data: {e}")
+        
+        self._send_tasks_update()
 
     def _process_task_desc_data(self, task_desc_rows):
         """
@@ -262,9 +263,6 @@ class TasksProcessor(BaseProcessor):
         except Exception as e:
             logging.error(f"Error processing player state data: {e}")
 
-    # NOTE: Subscription-based timer processing methods removed
-    # Timer data now handled by one-off queries in start_real_time_timer()
-
     def _send_tasks_update(self):
         """
         Send tasks update by combining state and description data.
@@ -274,6 +272,7 @@ class TasksProcessor(BaseProcessor):
                 return
 
             if not (hasattr(self, "_task_descriptions") and self._task_descriptions):
+                logging.warning(f"[TasksProcessor] Task descriptions not available. Has descriptions: {hasattr(self, '_task_descriptions')}, Count: {len(self._task_descriptions) if hasattr(self, '_task_descriptions') else 0}")
                 return
 
             # Format task data using cached data
@@ -300,7 +299,9 @@ class TasksProcessor(BaseProcessor):
             travelers = {}
 
             # Combine task state and description data
-            for task_id, task_state in self._task_states.items():
+            # Now iterating by entity_id (unique task instances) instead of task_id (task types)
+            for entity_id, task_state in self._task_states.items():
+                task_id = task_state.get("task_id", 0)  # Get task_id from task_state for description lookup
                 task_desc = self._task_descriptions.get(task_id, {})
                 traveler_id = task_state.get("traveler_id", 0)
 
@@ -310,7 +311,19 @@ class TasksProcessor(BaseProcessor):
                         "traveler_id": traveler_id,
                         "traveler": traveler_name,
                         "operations": [],
+                        "entity_ids_seen": set(),  # Track unique entity IDs to prevent real duplicates
                     }
+
+                # Check for duplicate entity_id for this traveler (should never happen but good safety check)
+                if entity_id in travelers[traveler_id]["entity_ids_seen"]:
+                    traveler_name = traveler_names.get(traveler_id, f"Traveler {traveler_id}")
+                    safe_traveler_name = str(traveler_name).encode("ascii", "replace").decode("ascii")
+                    logging.warning(
+                        f"[TasksProcessor] DUPLICATE ENTITY DETECTED: {safe_traveler_name} has duplicate entity_id {entity_id}"
+                    )
+                    continue  # Skip duplicate entity (should be rare)
+
+                travelers[traveler_id]["entity_ids_seen"].add(entity_id)
 
                 # Parse required items with item details from reference data
                 required_items_formatted = self._format_required_items(task_desc.get("required_items", []))
@@ -319,7 +332,7 @@ class TasksProcessor(BaseProcessor):
                 task_completed = task_state.get("completed", False)
                 task_info = {
                     "task_id": task_id,
-                    "entity_id": task_state.get("entity_id"),
+                    "entity_id": entity_id,  # Use the entity_id we're iterating over
                     "task_description": task_desc.get("description", f"Task {task_id}"),
                     "status": "✅" if task_completed else "❌",
                     "level_requirement": task_desc.get("level_requirement", {}),
@@ -339,6 +352,8 @@ class TasksProcessor(BaseProcessor):
                 traveler_data["completed_count"] = completed_count
                 traveler_data["total_count"] = total_count
                 traveler_data["complete"] = "✅" if completed_count == total_count else "❌"
+
+                traveler_data.pop("entity_ids_seen", None)
 
                 # Safe logging without Unicode characters to prevent encoding issues
                 completion_status_str = "complete" if completed_count == total_count else "incomplete"
@@ -404,7 +419,9 @@ class TasksProcessor(BaseProcessor):
                     quantity = item_raw[1]
 
                     # Look up item details using shared lookup service
-                    item_info = self.item_lookup_service.lookup_item_by_id(item_id)
+                    # Use best source determination for task items
+                    table_source = self.item_lookup_service.determine_best_source_for_item(item_id, "inventory")
+                    item_info = self.item_lookup_service.lookup_item_by_id(item_id, table_source)
                     item_name = item_info.get("name", f"Unknown Item {item_id}") if item_info else f"Unknown Item {item_id}"
                     item_tier = item_info.get("tier", 0) if item_info else 0
                     item_tag = item_info.get("tag", "") if item_info else ""
@@ -424,70 +441,6 @@ class TasksProcessor(BaseProcessor):
             logging.error(f"Error formatting required items: {e}")
             return []
 
-    def _fetch_missing_task_descriptions(self):
-        """
-        Fetch missing task descriptions when they're needed for transaction updates.
-        This helps ensure real-time updates work even if descriptions weren't cached.
-        """
-        try:
-            if not hasattr(self, "_task_states") or not self._task_states:
-                return
-
-            # Get all task IDs that we have states for but no descriptions
-            missing_task_ids = []
-            for task_id in self._task_states.keys():
-                if not hasattr(self, "_task_descriptions") or task_id not in self._task_descriptions:
-                    missing_task_ids.append(task_id)
-
-            if not missing_task_ids:
-                return
-
-            logging.info(f"TASK FETCH: Fetching descriptions for {len(missing_task_ids)} missing task IDs")
-
-            # Initialize descriptions cache if needed
-            if not hasattr(self, "_task_descriptions"):
-                self._task_descriptions = {}
-
-            # Fetch missing descriptions via client query
-            for task_id in missing_task_ids:
-                try:
-                    # Access client through services
-                    client = self.services.get("client")
-                    if client:
-                        desc_query = f"SELECT * FROM traveler_task_desc WHERE id = {task_id};"
-                        desc_results = client.query(desc_query)
-                        if desc_results and len(desc_results) > 0:
-                            self._task_descriptions[task_id] = {
-                                "description": desc_results[0].get("description", f"Task {task_id}"),
-                                "level_requirement": desc_results[0].get("level_requirement", {}),
-                                "required_items": desc_results[0].get("required_items", []),
-                                "rewarded_items": desc_results[0].get("rewarded_items", []),
-                                "rewarded_experience": desc_results[0].get("rewarded_experience", {}),
-                            }
-                        else:
-                            # Fallback description
-                            self._task_descriptions[task_id] = {
-                                "description": f"Task {task_id}",
-                                "level_requirement": {},
-                                "required_items": [],
-                                "rewarded_items": [],
-                                "rewarded_experience": {},
-                            }
-                except Exception as e:
-                    logging.warning(f"Failed to fetch description for task {task_id}: {e}")
-                    # Fallback description
-                    self._task_descriptions[task_id] = {
-                        "description": f"Task {task_id}",
-                        "level_requirement": {},
-                        "required_items": [],
-                        "rewarded_items": [],
-                        "rewarded_experience": {},
-                    }
-
-            logging.info(f"TASK FETCH: Successfully cached {len(self._task_descriptions)} task descriptions")
-
-        except Exception as e:
-            logging.error(f"Error fetching missing task descriptions: {e}")
 
     def _validate_task_data(self, entity_id, player_entity_id, traveler_id, task_id, completed):
         """
@@ -537,7 +490,7 @@ class TasksProcessor(BaseProcessor):
         """
         try:
             if not self._reset_in_progress:
-                logging.info(f"TASK RESET: Detected reset starting with table {table_name}")
+                logging.debug(f"TASK RESET: Detected reset starting with table {table_name}")
                 self._reset_in_progress = True
                 self._reset_timestamp = time.time()
                 self._reset_tables_updated.clear()
@@ -555,7 +508,7 @@ class TasksProcessor(BaseProcessor):
         Complete the reset sequence and refresh UI.
         """
         try:
-            logging.info("TASK RESET: Completing reset and refreshing UI")
+            logging.debug("TASK RESET: Completing reset and refreshing UI")
 
             # Clear reset state
             self._reset_in_progress = False
@@ -575,31 +528,20 @@ class TasksProcessor(BaseProcessor):
         Actually perform the UI refresh (extracted from original _refresh_tasks).
         """
         try:
-            # Debug cache state
             has_task_states = hasattr(self, "_task_states") and self._task_states
             has_task_descriptions = hasattr(self, "_task_descriptions") and self._task_descriptions
 
-            logging.info(
-                f"TASK CACHE DEBUG: task_states={len(self._task_states) if has_task_states else 0}, "
-                f"task_descriptions={len(self._task_descriptions) if has_task_descriptions else 0}"
-            )
 
             # Send current cached task data if we have task states (descriptions can be fetched if missing)
             if has_task_states:
-                # If we don't have task descriptions, try to fetch them quickly
-                if not has_task_descriptions:
-                    logging.warning("TASK REFRESH: Missing task descriptions, attempting to fetch...")
-                    self._fetch_missing_task_descriptions()
-                    has_task_descriptions = hasattr(self, "_task_descriptions") and self._task_descriptions
-
-                # Proceed if we now have both or if we have task states with basic fallback descriptions
+                # Only proceed if we have task descriptions (should come from subscriptions)
                 if has_task_descriptions:
                     formatted_tasks = self._format_combined_task_data()
-                    logging.info(f"TASK UI UPDATE: Sending {len(formatted_tasks)} travelers to UI")
+                    logging.debug(f"TASK UI UPDATE: Sending {len(formatted_tasks)} travelers to UI")
                     self._queue_update("tasks_update", formatted_tasks, {"transaction_update": True})
                     logging.debug("Refreshed tasks UI with cached data")
                 else:
-                    logging.warning("TASK REFRESH: Still missing descriptions after fetch attempt")
+                    logging.warning("TASK REFRESH: Missing task descriptions")
             else:
                 # Only send empty data if we truly have no cached data
                 logging.warning(f"TASK REFRESH BLOCKED: task_states={has_task_states}, task_descriptions={has_task_descriptions}")
@@ -630,9 +572,8 @@ class TasksProcessor(BaseProcessor):
         # Clear timer data
         if hasattr(self, "_task_timer_data"):
             self._task_timer_data.clear()
-        
+
         # Reset timer state for new claim
-        self._last_timer_query_time = 0
         self._current_task_expiration = 0
 
     def _process_task_state_transaction(self, update, completed_tasks):
@@ -643,9 +584,10 @@ class TasksProcessor(BaseProcessor):
             inserts = update.get("inserts", [])
             deletes = update.get("deletes", [])
 
-            # Collect all deletes and inserts by task_id to handle replacements properly
-            task_deletes = {}
-            task_inserts = {}
+            # Collect all deletes and inserts by entity_id to handle replacements properly
+            # Changed from task_id to entity_id to match the new storage method
+            entity_deletes = {}
+            entity_inserts = {}
 
             # Parse deletes first
             for delete_str in deletes:
@@ -657,10 +599,11 @@ class TasksProcessor(BaseProcessor):
                         delete_data = list(delete_str)
 
                     if isinstance(delete_data, list) and len(delete_data) >= 5:
-                        task_id = delete_data[3] if len(delete_data) > 3 else None
-                        if task_id:
-                            task_deletes[task_id] = delete_data
-                            logging.debug(f"[TasksProcessor] Collected delete for task_id={task_id}")
+                        entity_id = delete_data[0] if len(delete_data) > 0 else None  # entity_id is first field
+                        task_id = delete_data[3] if len(delete_data) > 3 else None  # task_id for logging
+                        if entity_id:
+                            entity_deletes[entity_id] = delete_data
+                            logging.debug(f"[TasksProcessor] Collected delete for entity_id={entity_id}, task_id={task_id}")
 
                 except Exception as e:
                     logging.warning(f"Error parsing task transaction delete: {e}")
@@ -675,44 +618,49 @@ class TasksProcessor(BaseProcessor):
                         task_data = list(insert_str)
 
                     if isinstance(task_data, list) and len(task_data) >= 5:
-                        task_id = task_data[3] if len(task_data) > 3 else None
-                        if task_id:
-                            task_inserts[task_id] = task_data
-                            logging.debug(f"[TasksProcessor] Collected insert for task_id={task_id}")
+                        entity_id = task_data[0] if len(task_data) > 0 else None  # entity_id is first field
+                        task_id = task_data[3] if len(task_data) > 3 else None  # task_id for logging
+                        if entity_id:
+                            entity_inserts[entity_id] = task_data
+                            logging.debug(f"[TasksProcessor] Collected insert for entity_id={entity_id}, task_id={task_id}")
 
                 except Exception as e:
                     logging.warning(f"Error parsing task transaction insert: {e}")
 
             # Process as replacements (delete + insert = update) or pure operations
-            all_task_ids = set(task_deletes.keys()) | set(task_inserts.keys())
+            all_entity_ids = set(entity_deletes.keys()) | set(entity_inserts.keys())
 
-            for task_id in all_task_ids:
-                has_delete = task_id in task_deletes
-                has_insert = task_id in task_inserts
+            for entity_id in all_entity_ids:
+                has_delete = entity_id in entity_deletes
+                has_insert = entity_id in entity_inserts
 
                 if has_delete and has_insert:
                     # Update task with new data
-                    task_data = task_inserts[task_id]
-                    entity_id = task_data[0] if len(task_data) > 0 else None
+                    task_data = entity_inserts[entity_id]
+                    entity_id_from_data = task_data[0] if len(task_data) > 0 else None
                     player_entity_id = task_data[1] if len(task_data) > 1 else None
                     traveler_id = task_data[2] if len(task_data) > 2 else None
+                    task_id = task_data[3] if len(task_data) > 3 else None
                     completed = task_data[4] if len(task_data) > 4 else False
 
-                    logging.debug(f"[TasksProcessor] REPLACEMENT for task_id={task_id}: completed={completed}")
+                    logging.debug(
+                        f"[TasksProcessor] REPLACEMENT for entity_id={entity_id}, task_id={task_id}: completed={completed}"
+                    )
 
                     # Validate parsed data
-                    if not self._validate_task_data(entity_id, player_entity_id, traveler_id, task_id, completed):
-                        logging.warning(f"[TasksProcessor] Invalid replacement data, skipping: task_id={task_id}")
+                    if not self._validate_task_data(entity_id_from_data, player_entity_id, traveler_id, task_id, completed):
+                        logging.warning(f"[TasksProcessor] Invalid replacement data, skipping: entity_id={entity_id}")
                         continue
 
-                    # Update cached task state
+                    # Update cached task state using entity_id as key
                     if hasattr(self, "_task_states"):
-                        old_completed = self._task_states.get(task_id, {}).get("completed", False)
+                        old_completed = self._task_states.get(entity_id, {}).get("completed", False)
 
-                        self._task_states[task_id] = {
-                            "entity_id": entity_id,
+                        self._task_states[entity_id] = {
+                            "entity_id": entity_id_from_data,
                             "player_entity_id": player_entity_id,
                             "traveler_id": traveler_id,
+                            "task_id": task_id,
                             "completed": completed,
                         }
 
@@ -724,29 +672,33 @@ class TasksProcessor(BaseProcessor):
 
                 elif has_insert and not has_delete:
                     # New task
-                    task_data = task_inserts[task_id]
-                    entity_id = task_data[0] if len(task_data) > 0 else None
+                    task_data = entity_inserts[entity_id]
+                    entity_id_from_data = task_data[0] if len(task_data) > 0 else None
                     player_entity_id = task_data[1] if len(task_data) > 1 else None
                     traveler_id = task_data[2] if len(task_data) > 2 else None
+                    task_id = task_data[3] if len(task_data) > 3 else None
                     completed = task_data[4] if len(task_data) > 4 else False
 
-                    logging.debug(f"[TasksProcessor] NEW TASK task_id={task_id}: completed={completed}")
+                    logging.debug(f"[TasksProcessor] NEW TASK entity_id={entity_id}, task_id={task_id}: completed={completed}")
 
                     # Validate and add new task
-                    if self._validate_task_data(entity_id, player_entity_id, traveler_id, task_id, completed):
+                    if self._validate_task_data(entity_id_from_data, player_entity_id, traveler_id, task_id, completed):
                         if hasattr(self, "_task_states"):
-                            self._task_states[task_id] = {
-                                "entity_id": entity_id,
+                            self._task_states[entity_id] = {
+                                "entity_id": entity_id_from_data,
                                 "player_entity_id": player_entity_id,
                                 "traveler_id": traveler_id,
+                                "task_id": task_id,
                                 "completed": completed,
                             }
 
                 elif has_delete and not has_insert:
                     # Remove task completely
-                    logging.debug(f"[TasksProcessor] DELETE task_id={task_id}")
-                    if hasattr(self, "_task_states") and task_id in self._task_states:
-                        del self._task_states[task_id]
+                    delete_data = entity_deletes[entity_id]
+                    task_id = delete_data[3] if len(delete_data) > 3 else None  # Get task_id for logging
+                    logging.debug(f"[TasksProcessor] DELETE entity_id={entity_id}, task_id={task_id}")
+                    if hasattr(self, "_task_states") and entity_id in self._task_states:
+                        del self._task_states[entity_id]
 
         except Exception as e:
             logging.error(f"Error processing task state transaction: {e}")
@@ -933,154 +885,60 @@ class TasksProcessor(BaseProcessor):
         except Exception as e:
             logging.error(f"Error processing player state transaction: {e}")
 
-    def start_real_time_timer(self, ui_update_callback):
+    def load_initial_task_data(self):
         """
-        Start the real-time timer with one-off queries for task timer data.
-        
+        Load initial task timer data using one-off query.
+        Called during processor initialization.
+        """
+        try:
+            self.load_task_timer_data(is_initial=True)
+            logging.debug("[TasksProcessor] Loaded initial task timer data")
+
+        except Exception as e:
+            logging.error(f"[TasksProcessor] Error loading initial task timer data: {e}")
+            # Start retry mechanism for critical initial data
+            self._start_retry_timer(is_initial=True)
+
+    def load_task_timer_data(self, is_initial=False):
+        """
+        Load task timer data using one-off query.
+
         Args:
-            ui_update_callback: Callback function to send timer updates to UI
-        """
-        try:
-            if self._timer_thread and self._timer_thread.is_alive():
-                logging.warning("[TasksProcessor] Timer already running, stopping previous timer first")
-                self.stop_real_time_timer()
-            
-            self._ui_update_callback = ui_update_callback
-            self._timer_stop_event.clear()
-            
-            # Initial query for task timer data
-            self._query_task_timer_data(is_initial=True)
-            
-            # Start timer thread for periodic verification
-            self._timer_thread = threading.Thread(
-                target=self._timer_loop,
-                daemon=True
-            )
-            self._timer_thread.start()
-            
-            logging.info(f"[TasksProcessor] Real-time timer started with {self.TASK_TIMER_VERIFICATION_INTERVAL}s verification interval")
-            
-        except Exception as e:
-            logging.error(f"[TasksProcessor] Error starting real-time timer: {e}")
-
-    def stop_real_time_timer(self):
-        """Stop the real-time timer thread."""
-        try:
-            if self._timer_thread and self._timer_thread.is_alive():
-                logging.info("[TasksProcessor] Stopping real-time timer...")
-                self._timer_stop_event.set()
-                self._timer_thread.join(timeout=2.0)
-                
-                if self._timer_thread.is_alive():
-                    logging.warning("[TasksProcessor] Timer thread did not stop within timeout")
-                else:
-                    logging.info("[TasksProcessor] Real-time timer stopped successfully")
-                    
-            self._timer_thread = None
-            self._ui_update_callback = None
-            
-        except Exception as e:
-            logging.error(f"[TasksProcessor] Error stopping real-time timer: {e}")
-
-    def _timer_loop(self):
-        """
-        Main timer loop that handles periodic verification and zero-second refresh.
-        """
-        try:
-            logging.info("[TasksProcessor] Timer loop started")
-            
-            while not self._timer_stop_event.is_set():
-                current_time = time.time()
-                
-                # Check if we need periodic verification
-                # DISABLED: Periodic verification causes WebSocket threading conflicts
-                # TODO: Implement thread-safe query mechanism or use subscription-based updates
-                # time_since_last_query = current_time - self._last_timer_query_time
-                # if time_since_last_query >= self.TASK_TIMER_VERIFICATION_INTERVAL:
-                #     logging.info(f"[TasksProcessor] Periodic verification: {time_since_last_query:.1f}s since last query")
-                #     self._query_task_timer_data(is_verification=True)
-                
-                # Check for zero-second refresh
-                # DISABLED: Zero-second refresh also causes WebSocket threading conflicts  
-                # The timer will rely on initial query and real-time transaction updates
-                # if self._current_task_expiration > 0:
-                #     time_remaining = self._current_task_expiration - current_time
-                #     
-                #     # If timer expired or about to expire (within 1 second)
-                #     if time_remaining <= 1.0:
-                #         logging.info("[TasksProcessor] Timer at zero seconds, checking for task reset")
-                #         self._query_task_timer_data(is_zero_refresh=True)
-                
-                # Sleep for 1 second before next check
-                if not self._timer_stop_event.wait(1.0):
-                    continue
-                    
-        except Exception as e:
-            logging.error(f"[TasksProcessor] Error in timer loop: {e}")
-        finally:
-            logging.info("[TasksProcessor] Timer loop stopped")
-
-    def _query_task_timer_data(self, is_initial=False, is_verification=False, is_zero_refresh=False):
-        """
-        Query task timer data using one-off query instead of subscriptions.
-        
-        Args:
-            is_initial: True if this is the initial query at startup
-            is_verification: True if this is a periodic verification query
-            is_zero_refresh: True if this is a zero-second refresh query
+            is_initial: True if this is the initial load at startup
         """
         try:
             client = self.services.get("client") if self.services else None
             if not client:
                 logging.warning("[TasksProcessor] No client available for timer query")
                 return
-            
-            query_type = "initial" if is_initial else ("verification" if is_verification else ("zero-refresh" if is_zero_refresh else "unknown"))
+
+            query_type = "initial" if is_initial else "refresh"
             logging.debug(f"[TasksProcessor] Querying task timer data ({query_type})")
-            
+
             # Query the traveler_task_loop_timer table
             query_string = "SELECT * FROM traveler_task_loop_timer;"
             results = client.query(query_string)
-            
+
             if results:
-                previous_expiration = self._current_task_expiration
-                
                 # Process the results same way as subscription data
                 self._process_timer_query_results(results, query_type)
-                
-                # Log verification results
-                if is_verification and previous_expiration > 0:
-                    current_time = time.time()
-                    app_calculated_remaining = previous_expiration - current_time
-                    server_remaining = self._current_task_expiration - current_time if self._current_task_expiration > 0 else 0
-                    
-                    time_difference = abs(app_calculated_remaining - server_remaining)
-                    if time_difference > 5:  # Log if difference > 5 seconds
-                        logging.warning(
-                            f"[TasksProcessor] Timer discrepancy detected! "
-                            f"App calculated: {app_calculated_remaining:.1f}s, "
-                            f"Server actual: {server_remaining:.1f}s, "
-                            f"Difference: {time_difference:.1f}s"
-                        )
-                    else:
-                        logging.info(
-                            f"[TasksProcessor] Timer verification OK - "
-                            f"Difference: {time_difference:.1f}s"
-                        )
-                
-                # Update last query time
-                self._last_timer_query_time = time.time()
-                
+                # Reset retry counter on successful query
+                self._reset_retry()
+
             else:
                 logging.warning(f"[TasksProcessor] No results from timer query ({query_type})")
-                
+                # Start retry if no results received
+                self._start_retry_timer(is_initial)
+
         except Exception as e:
             logging.error(f"[TasksProcessor] Error querying task timer data: {e}")
+            # Start retry mechanism on failure
+            self._start_retry_timer(is_initial)
 
     def _process_timer_query_results(self, results, query_type):
         """
         Process timer query results and send updates to UI.
-        
+
         Args:
             results: Query results from traveler_task_loop_timer
             query_type: String describing the type of query for logging
@@ -1098,7 +956,7 @@ class TasksProcessor(BaseProcessor):
                         if timestamp_micros:
                             # Convert microseconds to seconds
                             expiration_time = timestamp_micros / 1_000_000
-                            
+
                             # Store timer data
                             self._task_timer_data[scheduled_id] = expiration_time
                             self._current_task_expiration = expiration_time
@@ -1106,7 +964,7 @@ class TasksProcessor(BaseProcessor):
                             current_time = time.time()
                             time_diff = expiration_time - current_time
 
-                            logging.info(
+                            logging.debug(
                                 f"[TasksProcessor] Task timer from query ({query_type}): "
                                 f"scheduled_id={scheduled_id}, expires in {time_diff:.1f}s"
                             )
@@ -1116,11 +974,90 @@ class TasksProcessor(BaseProcessor):
                                 "traveler_tasks_expiration": expiration_time,
                                 "source": f"one_off_query_{query_type}",
                                 "query_type": query_type,
-                                "is_initial": (query_type == "initial")
+                                "is_initial": (query_type == "initial"),
                             }
-                            
+
                             logging.debug(f"[TasksProcessor] Sending traveler task timer update: {timer_data}")
                             self._queue_update("traveler_task_timer_update", timer_data)
-                                
+
         except Exception as e:
             logging.error(f"[TasksProcessor] Error processing timer query results: {e}")
+
+    def _start_retry_timer(self, is_initial=False):
+        """
+        Start exponential backoff retry timer for task data loading.
+
+        Args:
+            is_initial: True if this is a retry for initial data loading
+        """
+        if self._retry_in_progress:
+            return  # Already retrying
+
+        if self._retry_count >= self._max_retries:
+            logging.error(f"[TasksProcessor] Max retries ({self._max_retries}) reached for task timer data")
+            self._send_retry_failed_notification()
+            return
+
+        # Calculate exponential backoff delay
+        delay = min(self._base_delay * (2**self._retry_count), self._max_delay)
+        self._retry_count += 1
+        self._retry_in_progress = True
+
+        logging.warning(
+            f"[TasksProcessor] Starting retry {self._retry_count}/{self._max_retries} in {delay}s for task timer data"
+        )
+
+        # Send retry status to UI
+        self._send_retry_status(delay, is_initial)
+
+        # Schedule retry
+        self._retry_timer = threading.Timer(delay, self._execute_retry, args=[is_initial])
+        self._retry_timer.start()
+
+    def _execute_retry(self, is_initial=False):
+        """Execute the retry attempt."""
+        try:
+            self._retry_in_progress = False
+            logging.debug(f"[TasksProcessor] Executing retry {self._retry_count}/{self._max_retries} for task timer data")
+            self.load_task_timer_data(is_initial)
+
+        except Exception as e:
+            logging.error(f"[TasksProcessor] Retry attempt failed: {e}")
+            self._retry_in_progress = False
+            # Will trigger another retry if within max retries
+
+    def _reset_retry(self):
+        """Reset retry mechanism on successful operation."""
+        if self._retry_count > 0:
+            logging.debug(f"[TasksProcessor] Task timer data loaded successfully after {self._retry_count} retries")
+
+        self._retry_count = 0
+        self._retry_in_progress = False
+
+        if self._retry_timer:
+            self._retry_timer.cancel()
+            self._retry_timer = None
+
+    def _send_retry_status(self, delay, is_initial):
+        """Send retry status to UI for display."""
+        retry_data = {
+            "status": "retrying",
+            "retry_count": self._retry_count,
+            "max_retries": self._max_retries,
+            "delay": delay,
+            "is_initial": is_initial,
+            "message": f"Retrying in {delay}s... (attempt {self._retry_count}/{self._max_retries})",
+        }
+
+        self._queue_update("traveler_task_retry_status", retry_data)
+
+    def _send_retry_failed_notification(self):
+        """Send notification that all retries have failed."""
+        failure_data = {
+            "status": "failed",
+            "retry_count": self._retry_count,
+            "max_retries": self._max_retries,
+            "message": f"Failed to load task data after {self._max_retries} attempts",
+        }
+
+        self._queue_update("traveler_task_retry_status", failure_data)

@@ -1,8 +1,13 @@
-import customtkinter as ctk
 import logging
+from typing import Dict, List
+
+import customtkinter as ctk
 from tkinter import Menu, ttk
-from typing import List, Dict
+
 from app.ui.components.filter_popup import FilterPopup
+from app.ui.styles import TreeviewStyles
+from app.ui.themes import get_color, register_theme_callback
+from app.services.search_parser import SearchParser
 
 
 class ActiveCraftingTab(ctk.CTkFrame):
@@ -11,6 +16,9 @@ class ActiveCraftingTab(ctk.CTkFrame):
     def __init__(self, master, app):
         super().__init__(master, fg_color="transparent")
         self.app = app
+        
+        # Register for theme change notifications
+        register_theme_callback(self._on_theme_changed)
 
         # Updated headers to include Accept Help column
         self.headers = ["Item", "Tier", "Quantity", "Tag", "Remaining Effort", "Accept Help", "Crafter", "Building"]
@@ -20,7 +28,11 @@ class ActiveCraftingTab(ctk.CTkFrame):
         self.sort_column = "Item"
         self.sort_reverse = False
         self.active_filters: Dict[str, set] = {}
+        
+        # Initialize search parser
+        self.search_parser = SearchParser()
         self.clicked_header = None
+        
 
         self._create_widgets()
         self._create_context_menu()
@@ -28,86 +40,17 @@ class ActiveCraftingTab(ctk.CTkFrame):
     def _create_widgets(self):
         """Creates the styled Treeview and its scrollbars."""
         style = ttk.Style()
-        style.theme_use("default")
-
-        # Configure the Treeview colors
-        style.configure(
-            "Treeview",
-            background="#2a2d2e",
-            foreground="white",
-            fieldbackground="#343638",
-            borderwidth=0,
-            rowheight=28,
-            relief="flat",
-        )
-        style.map("Treeview", background=[("selected", "#1f6aa5")])
-
-        # Configure headers
-        style.configure(
-            "Treeview.Heading",
-            background="#1e2124",
-            foreground="#e0e0e0",
-            font=("Segoe UI", 11, "normal"),
-            padding=(8, 6),
-            relief="flat",
-            borderwidth=0,
-        )
-        style.map("Treeview.Heading", background=[("active", "#2c5d8f")])
-
-        # Create unique style names to prevent conflicts
-        self.v_scrollbar_style = "ActiveCrafting.Vertical.TScrollbar"
-        self.h_scrollbar_style = "ActiveCrafting.Horizontal.TScrollbar"
-
-        # Configure custom scrollbar styles
-        style.configure(
-            self.v_scrollbar_style,
-            background="#1e2124",
-            borderwidth=0,
-            arrowcolor="#666",
-            troughcolor="#2a2d2e",
-            darkcolor="#1e2124",
-            lightcolor="#1e2124",
-            width=12,
-        )
-        style.configure(
-            self.h_scrollbar_style,
-            background="#1e2124",
-            borderwidth=0,
-            arrowcolor="#666",
-            troughcolor="#2a2d2e",
-            darkcolor="#1e2124",
-            lightcolor="#1e2124",
-            height=12,
-        )
-
-        # Configure state-specific scrollbar colors to prevent grey appearance when inactive
-        style.map(
-            self.v_scrollbar_style,
-            background=[
-                ("active", "#1e2124"),  # Hover state
-                ("pressed", "#1e2124"),  # Click/drag state
-                ("disabled", "#1e2124"),  # No scroll needed state
-                ("!active", "#1e2124"),  # Normal state
-            ],
-            troughcolor=[("active", "#2a2d2e"), ("pressed", "#2a2d2e"), ("disabled", "#2a2d2e"), ("!active", "#2a2d2e")],
-            arrowcolor=[("active", "#666"), ("pressed", "#666"), ("disabled", "#666"), ("!active", "#666")],
-        )
-        style.map(
-            self.h_scrollbar_style,
-            background=[("active", "#1e2124"), ("pressed", "#1e2124"), ("disabled", "#1e2124"), ("!active", "#1e2124")],
-            troughcolor=[("active", "#2a2d2e"), ("pressed", "#2a2d2e"), ("disabled", "#2a2d2e"), ("!active", "#2a2d2e")],
-            arrowcolor=[("active", "#666"), ("pressed", "#666"), ("disabled", "#666"), ("!active", "#666")],
-        )
+        
+        # Apply centralized styling
+        TreeviewStyles.apply_treeview_style(style)
+        self.v_scrollbar_style, self.h_scrollbar_style = TreeviewStyles.apply_scrollbar_style(style, "ActiveCrafting")
 
         # Create the Treeview with tree structure support
         self.tree = ttk.Treeview(self, columns=self.headers, show="tree headings", style="Treeview")
 
-        # Configure tags for different progress colors based on active crafting status
-        self.tree.tag_configure("ready", background="#2d4a2d", foreground="#4CAF50")  # Green for ready/complete
-        self.tree.tag_configure("crafting", background="#3d3d2d", foreground="#FFA726")  # Orange for in progress
-        self.tree.tag_configure("empty", background="#2a2d2e", foreground="#888888")  # Gray for empty
-        self.tree.tag_configure("child", background="#3a3a3a")  # Darker for child rows
-        self.tree.tag_configure("preparing", background="#2e2e3a", foreground="#B39DDB")  # Purple for preparation
+        # Apply common tree tags and configure custom status tags
+        TreeviewStyles.configure_tree_tags(self.tree)
+        self._configure_status_tags()
 
         # Create scrollbars with unique styles
         vsb = ttk.Scrollbar(self, orient="vertical", command=self.tree.yview, style=self.v_scrollbar_style)
@@ -147,6 +90,29 @@ class ActiveCraftingTab(ctk.CTkFrame):
         # Bind events
         self.tree.bind("<Button-3>", self.show_header_context_menu)
         self.tree.bind("<Configure>", self.on_tree_configure)
+        
+    
+    def _configure_status_tags(self):
+        """Configure status-specific tag colors using current theme."""
+        self.tree.tag_configure("ready", 
+                              background=get_color("TREEVIEW_ALTERNATE"), 
+                              foreground=get_color("STATUS_SUCCESS"))
+        self.tree.tag_configure("crafting", 
+                              background=get_color("TREEVIEW_ALTERNATE"), 
+                              foreground=get_color("STATUS_IN_PROGRESS"))
+        self.tree.tag_configure("preparing", 
+                              background=get_color("TREEVIEW_ALTERNATE"), 
+                              foreground=get_color("TEXT_ACCENT"))
+    
+    def _on_theme_changed(self, old_theme: str, new_theme: str):
+        """Handle theme change by updating colors."""
+        # Reapply treeview styling
+        style = ttk.Style()
+        TreeviewStyles.apply_treeview_style(style)
+        TreeviewStyles.configure_tree_tags(self.tree)
+        
+        # Reconfigure status tags with new theme colors
+        self._configure_status_tags()
 
     def on_tree_configure(self, event):
         """Manages horizontal scrollbar visibility with debouncing for smooth resize."""
@@ -178,7 +144,8 @@ class ActiveCraftingTab(ctk.CTkFrame):
 
     def _create_context_menu(self):
         """Creates the right-click menu for column headers."""
-        self.header_context_menu = Menu(self, tearoff=0, background="#2a2d2e", foreground="white", activebackground="#1f6aa5")
+        menu_config = TreeviewStyles.get_menu_style_config()
+        self.header_context_menu = Menu(self, **menu_config)
         self.header_context_menu.add_command(label="Filter by...", command=lambda: self._open_filter_popup(self.clicked_header))
         self.header_context_menu.add_command(label="Clear Filter", command=lambda: self.clear_column_filter(self.clicked_header))
 
@@ -321,9 +288,10 @@ class ActiveCraftingTab(ctk.CTkFrame):
 
     def apply_filter(self):
         """Filters the master data list based on search and column filters."""
-        search_term = self.app.search_var.get().lower()
+        search_text = self.app.get_search_text()
         temp_data = self.all_data[:]
 
+        # Apply column filters first
         if self.active_filters:
             for header, values in self.active_filters.items():
                 if header.lower() in ["building", "crafter", "accept help"]:
@@ -332,8 +300,10 @@ class ActiveCraftingTab(ctk.CTkFrame):
                     field_name = header.lower().replace(" ", "_")
                     temp_data = [row for row in temp_data if str(row.get(field_name, "")) in values]
 
-        if search_term:
-            temp_data = [row for row in temp_data if self._row_matches_search(row, search_term)]
+        # Apply keyword-based search
+        if search_text:
+            parsed_query = self.search_parser.parse_search_query(search_text)
+            temp_data = [row for row in temp_data if self.search_parser.match_row(row, parsed_query)]
 
         self.filtered_data = temp_data
         self.sort_by(self.sort_column, self.sort_reverse)

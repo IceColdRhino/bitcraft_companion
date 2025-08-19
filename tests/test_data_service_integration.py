@@ -288,45 +288,6 @@ class TestMessageProcessing:
             assert data_service.processors is not None
             assert data_service.message_router is not None
 
-    # def test_subscription_setup_integration(self):
-    #     """Test subscription setup with query service."""
-    #     data_service = DataService()
-
-    #     # Set up required attributes
-    #     data_service.player = Mock()
-    #     data_service.player.user_id = "test-user-123"
-    #     data_service.claim = Mock()
-    #     data_service.claim.claim_id = "claim-456"
-
-    #     # Mock client
-    #     mock_client = MockBitCraftClient()
-    #     data_service.client = mock_client
-
-    #     # Mock message router (required for subscription setup)
-    #     mock_message_router = Mock()
-    #     data_service.message_router = mock_message_router
-
-    #     with patch('app.client.query_service.QueryService') as mock_query_service_class:
-    #         mock_query_service = Mock()
-    #         mock_query_service.get_subscription_queries.return_value = [
-    #             "SELECT * FROM inventory_state WHERE claim_id = 'claim-456';",
-    #             "SELECT * FROM passive_craft_state WHERE claim_id = 'claim-456';"
-    #         ]
-    #         mock_query_service_class.return_value = mock_query_service
-
-    #         # Call subscription setup
-    #         data_service._setup_subscriptions_for_current_claim()
-
-    #         # Verify query service was used
-    #         mock_query_service.get_subscription_queries.assert_called_once_with(
-    #             "test-user-123", "claim-456"
-    #         )
-
-    #         # Verify subscription setup was attempted
-    #         # The subscription listener might not be set if setup failed
-    #         setup_attempted = (mock_query_service.get_subscription_queries.called or
-    #                          mock_client.subscription_listener is not None)
-    #         assert setup_attempted
 
     def test_message_routing_to_processors(self):
         """Test message routing to processors."""

@@ -1,4 +1,6 @@
 import json
+import logging
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Dict, Optional
@@ -539,8 +541,6 @@ class BuildingState:
         # Parse functions data if it's a string
         if isinstance(functions_data, str) and functions_data:
             try:
-                import json
-
                 functions_array = json.loads(functions_data)
             except (json.JSONDecodeError, TypeError):
                 return building_type_info
@@ -590,12 +590,23 @@ class InventoryState:
     player_owner_entity_id: int = 0
 
     @classmethod
-    def from_array(cls, data: List) -> "InventoryState":
+    def from_array(cls, data) -> "InventoryState":
         """Create InventoryState from SpacetimeDB array format."""
+        # Handle string data that needs JSON parsing
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+                logging.debug(f"[InventoryState.from_array] Parsed JSON, new type: {type(data)}")
+            except (json.JSONDecodeError, TypeError) as e:
+                logging.error(f"[InventoryState.from_array] Failed to parse JSON string: {e}")
+                raise ValueError(f"Invalid inventory_state JSON string: {e}")
+        
         if not isinstance(data, list):
+            logging.error(f"[InventoryState.from_array] Expected list after parsing, got {type(data)}")
             raise ValueError(f"Invalid inventory_state array format: expected list, got {type(data)}")
         
         if len(data) < 6:
+            logging.error(f"[InventoryState.from_array] Array too short: {len(data)} elements, expected 6+")
             raise ValueError(f"Invalid inventory_state array format: expected at least 6 elements, got {len(data)}")
         
         return cls(
@@ -855,8 +866,6 @@ class ProgressiveActionState:
         Returns:
             True if locked (has unexpired lock_expiration), False otherwise.
         """
-        import time
-
         expiration_seconds = self.get_lock_expiration_seconds()
         if expiration_seconds is None:
             return False
@@ -976,8 +985,6 @@ class ProgressiveActionState:
             return []
 
         try:
-            import json
-
             return json.loads(field_value)
         except (json.JSONDecodeError, TypeError):
             return []
@@ -997,8 +1004,6 @@ class ProgressiveActionState:
             return []
 
         try:
-            import json
-
             item_stacks = item_stacks_str
             # item_stacks = json.loads(item_stacks_str)
 
@@ -1178,6 +1183,21 @@ class PassiveCraftState:
         """Create PassiveCraftState from JSON string"""
         data = json.loads(json_str)
         return cls.from_dict(data)
+    
+    @property
+    def timestamp_micros(self) -> Optional[int]:
+        """
+        Extract timestamp in microseconds from the timestamp dict.
+        
+        Returns:
+            int: Timestamp in microseconds since unix epoch, or None if not found
+        """
+        try:
+            if isinstance(self.timestamp, dict):
+                return self.timestamp.get("__timestamp_micros_since_unix_epoch__")
+            return None
+        except Exception:
+            return None
 
     def to_dict(self, crafting_recipe_data: Optional[list] = None, building_desc_data: Optional[list] = None) -> dict:
         """Convert to dictionary with optional enrichment data"""
@@ -1187,6 +1207,7 @@ class PassiveCraftState:
             "recipe_id": self.recipe_id,
             "building_entity_id": self.building_entity_id,
             "timestamp": self.timestamp,
+            "timestamp_micros": self.timestamp_micros,  
             "status": self.status,
             "slot": self.slot,
             "craft_info": self.get_craft_info(crafting_recipe_data, building_desc_data),
@@ -1234,7 +1255,6 @@ class PassiveCraftState:
                         "created_timestamp": values.get("created_timestamp", {}),
                     }
                     break
-        # print(info)
         return info
 
     def _parse_status(self) -> dict:

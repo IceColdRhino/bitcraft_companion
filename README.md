@@ -1,77 +1,49 @@
 # BitCraft Companion
 
-A comprehensive desktop application for managing and monitoring your BitCraft game data in real-time. BitCraft Companion provides live access to your claim information, inventory management, crafting monitoring, task tracking, and completion notifications through an intuitive tabbed interface.
+A comprehensive desktop application for managing and monitoring your BitCraft game data in real time. BitCraft Companion provides live access to your claim information, inventory management, crafting monitoring, task tracking, and completion notifications through an intuitive tabbed interface.
 
-## 🎮 What it does
+## 🎮 What It Does
 
-BitCraft Companion connects directly to BitCraft game servers via WebSocket to provide real-time monitoring of your gameplay data. The application serves as your external command center, helping you manage multiple claims, track crafting progress, monitor inventory, and receive notifications when items are ready - all while you play the game.
+BitCraft Companion connects directly to BitCraft game servers via WebSocket to provide real-time monitoring of your gameplay data. The application serves as your external command center, helping you manage multiple claims, track crafting progress, monitor inventory, and receive notifications when items are ready—all while you play the game.
 
 ### Core Features
 
-#### 🏠 **Multi-Claim Management**
-- **Claim Switching**: Seamlessly switch between multiple claims via dropdown selector
-- **Real-time Claim Data**: Live connection to your active BitCraft claim
-- **Claim Information Header**: Shows current claim name, member count, and connection status
-
-#### 📦 **Claim Inventory Tab**
-- **Comprehensive View**: Aggregates all items from storage buildings across your entire claim
-- **Real-time Updates**: Instantly reflects in-game inventory changes
-- **Advanced Search & Filtering**: Search across item names, tags, and properties with instant results
-- **Tier-based Organization**: Groups items by tier (T1, T2, T3, etc.) for resource planning
-- **Quantity Tracking**: Shows exact quantities and locations of every item
-- **Column Filtering**: Right-click any column header for advanced filtering options
-- **Data Export**: Export inventory data to CSV or JSON formats
-
-#### 🔧 **Passive Crafting Tab**
-- **Live Crafting Monitor**: View all active passive crafting operations in real-time
-- **Smart Timer System**: Shows exact countdown timers for each crafting operation
-- **Item Information**: Displays what items are being crafted and their progress
-- **Building Integration**: Shows which buildings are running crafting operations
-- **Crafter Tracking**: Identifies which player started each crafting operation
-- **Completion Status**: Clear "READY" indicators when crafts finish
-
-#### ⚡ **Active Crafting Tab**
-- **Real-time Progress**: Monitor active crafting operations with live progress updates
-- **Remaining Effort Display**: Shows exact effort remaining until completion 
-- **Accept Help Status**: Track which buildings are accepting help from other players
-- **Multi-building Support**: View active crafts across all buildings simultaneously
-- **Crafter Information**: See who is working on each active crafting project
-- **Instant Updates**: Reflects progress changes immediately as you work in-game
-
-#### 📋 **Traveler's Tasks Tab**
-- **Task Management**: Complete overview of all available traveler tasks
-- **Completion Tracking**: Monitor task progress and completion status
-- **Task Information**: Detailed task descriptions and requirements
-- **Refresh Timer**: Shows when new tasks will become available
-
-#### 🔔 **Smart Notification System**
-- **Native Windows Toasts**: Notification integration with Windows 11/10
-- **Perfect Timing**: 
-  - Active crafts notify when remaining effort reaches 0 (READY status)
-  - Passive crafts notify when timer countdown completes
-- **Bundled Notifications**: Multiple items completing simultaneously show as single notification
-- **Sound Integration**: Notifications include system sound with "reminder" priority for better visibility over games
-
 #### 🔐 **Secure Authentication**
-- **Email-based Login**: Uses your BitCraft account email for authentication. Nothing is shared externally.
-- **Token Management**: Securely stores authentication tokens using Windows Credential Manager
-- **Persistent Sessions**: Remembers your login details between sessions
+- **Email-Based Login**: Uses your BitCraft account email for authentication. Nothing is shared externally.
+- **Token Management**: Securely stores authentication tokens using Windows Credential Manager.
+- **Persistent Sessions**: Remembers your login details between sessions.
 
-#### 🎨 **Modern User Interface**
-- **Tabbed Navigation**: Clean, professional interface with four main tabs
-- **Dark Theme**: Easy on the eyes with a modern dark color scheme
-- **Smart Loading States**: Loading overlays with progress indicators during data fetching
-- **Advanced Search**: Unified search bar with real-time filtering across all tabs
-- **Settings Integration**: Settings window with notification controls and preferences
+#### 🏠 **Multi-Claim Management**
+- **Claim Switching**: Seamlessly switch between multiple claims via a dropdown selector.
+- **Real-Time Claim Data**: Live connection to your active BitCraft claim.
+- **Claim Information Header**: Shows current claim name, member count, and connection status.
 
-### Data Sources
+#### 📊 **Data Presentation**
+- **Logical Keyword Search**: Advanced search system with keywords and comparison operators across all tabs
+  - **Keywords**: `item=`, `tier=`, `qty=`, `tag=`, `container=`, `building=`, `crafter=`, `traveler=`, `status=`
+  - **Operators**: `=`, `>`, `<`, `>=`, `<=`, `!=` for precise filtering
+  - **Examples**: `item=plank tier>3 qty<100`, `container=carving`, `building!=workshop`
+  - **Smart Detection**: Automatically handles numeric vs text comparisons
+  - **Backward Compatible**: Regular search terms work alongside keywords
+- **Column Filtering**: Right-click any column header to access advanced filtering options.
+- **Column Sorting**: Click any column header to sort data logically in ascending or descending order.
+- **Combined Filters & Sorting**: Use filters and sorting together to drill down into large datasets, such as finding all Tier 3 building materials currently being crafted.
+- **Live Updates**: All search, filter, and sort operations reflect real-time changes as your in-game data updates, ensuring you always see the most current information.
+- **Contextual Actions**: Right-click rows for context menus with quick actions, such as exporting filtered data, viewing item details, or jumping to related crafting operations.
+- **Clear & Reset Controls**: Easily reset all filters and sorting with dedicated clear buttons, returning your view to the default state for broad overviews.
 
-The application uses reference data files to interpret game data:
-- **Building Descriptions**: Maps building IDs to human-readable names
-- **Item Descriptions**: Provides item metadata (names, tiers, tags)
-- **Crafting Recipes**: Recipe definitions for passive crafting operations
-- **Resource Descriptions**: Information about game resources
-- **Building Type Mappings**: Categorizes buildings by their function
+#### ⚙️ **Settings**
+- **Data Export**: Easily export your claim inventory data to CSV or JSON formats for external analysis or sharing.
+- **Theme Selection** *(work in progress)*: Switch between Light and Dark themes to match your personal preference or system settings.
+- **Force Refresh**: Instantly reload all claim and inventory data from the server. Use this option if you suspect data is out of sync or want to ensure you have the latest updates.
+- **Notification Controls**: Enable or disable Windows toast notifications for craft completions.
+- **About & Version Info**: View application version, update status, and links to documentation or support.
+
+#### 🔢 **Available Data**
+- **Claim Inventory**: View all items stored across your claim, with live updates and instant search/filtering.
+- **Passive Crafting**: Track ongoing passive crafting operations, see timers, progress, and who started each craft.
+- **Active Crafting**: Monitor active crafting projects in real time, including remaining effort and help status.
+- **Traveler's Tasks**: See available traveler tasks, requirements, progress, and refresh timers at a glance.
 
 ## 🚀 Getting Started
 
@@ -84,85 +56,95 @@ The application uses reference data files to interpret game data:
 ### Installation Options
 
 #### Option 1: Executable (Recommended)
-1. **Download the latest release** from the releases page
-2. **Extract** the executable to your preferred location
-3. **Run** `BitCraft_Companion-v{version}.exe`
+1. **Download the latest release** from the releases page.
+2. **Extract** the executable to your preferred location.
+3. **Run** `BitCraft_Companion-v{version}.exe`.
 
 #### Option 2: Run from Source
-1. **Clone the repository** or download the source code
-2. **Install Poetry** if you haven't already: `pip install poetry`
-3. **Install dependencies**: `poetry install`
-4. **Run the application**: `poetry run python app/main.py`
+1. **Clone the repository** or download the source code.
+2. **Install Poetry** if you haven't already: `pip install poetry`.
+3. **Install dependencies**: `poetry install`.
+4. **Run the application**: `poetry run python app/main.py`.
 
-### First Time Setup
+### First-Time Setup
 
-1. **Launch the application** - you'll see the login overlay
-2. **Enter your BitCraft email** - the same email used for your game account
-3. **Check your email** for the access code from BitCraft
-4. **Enter the access code** in the application
-5. **Select your player name** 
-6. **Choose your region** (e.g., bitcraft-1) from the dropdown
-7. **Start using the features** - your credentials are securely saved for future use
+1. **Launch the application**—you'll see the login overlay.
+2. **Enter your BitCraft email**—the same email used for your game account.
+3. **Check your email** for the access code from BitCraft.
+4. **Enter the access code** in the application.
+5. **Select your player name**.
+6. **Choose your region** (e.g., bitcraft-1) from the dropdown.
+7. **Start using the features**—your credentials are securely saved for future use.
 
 ## 📱 How to Use
 
 ### Getting Started
-1. **Launch the application** and complete the login process
-2. **Select your claim** from the dropdown in the header (if you have multiple)
-3. **Navigate between tabs** - Claim Inventory, Passive Crafting, Active Crafting, Traveler's Tasks
-4. **Use the search bar** for instant filtering across any tab's data
-5. **Enable notifications** in Settings window for craft completion alerts
+1. **Launch the application** and complete the login process.
+2. **Select your claim** from the dropdown in the header (if you have multiple).
+3. **Navigate between tabs**—Claim Inventory, Passive Crafting, Active Crafting, Traveler's Tasks.
+4. **Use the search bar** for instant filtering across any tab's data.
+5. **Enable notifications** in the Settings window for craft completion alerts.
 
-### Claim Inventory Tab
-1. **Real-time View** - all storage items across your claim update automatically  
-2. **Search & Filter** - use the search bar or right-click column headers for advanced filtering
-3. **Sort by Tier** - click the "Tier" column to organize items by T1, T2, T3, etc.
-4. **Export Data** - save current inventory to CSV or JSON files
-5. **Track Changes** - watch quantities update live as you move items in-game
+### 🔍 **Advanced Search Guide**
 
-### Passive Crafting Tab
-1. **Monitor Operations** - see all active passive crafting across your claim
-2. **Timer Countdown** - watch exact time remaining for each crafting operation
-3. **Track Builders** - see which claim member started each craft
-4. **Ready Status** - items show "READY" when crafting completes
-5. **Get Notifications** - receive Windows toast notifications when items finish
-6. **Filter by Building** - right-click columns to filter by specific buildings or crafters
+BitCraft Companion features a powerful keyword-based search system that lets you find exactly what you're looking for across all tabs.
 
-### Active Crafting Tab  
-1. **Real-time Progress** - monitor active crafting operations as they happen
-2. **Remaining Effort** - see exact effort remaining (not percentages)
-3. **Accept Help Status** - track which buildings are accepting help
-4. **Live Updates** - progress updates instantly as you work in-game
-5. **Completion Alerts** - get notifications when remaining effort reaches 0
+#### **Basic Search**
+- Type any text to search across all visible fields
+- Example: `plank` finds all items containing "plank"
 
-### Traveler's Tasks Tab
-1. **Task Overview** - view all available traveler tasks and their requirements
-2. **Progress Tracking** - monitor task completion status
-3. **Refresh Timer** - see when new tasks become available
-4. **Completion Notifications** - receive alerts when tasks are completed
+#### **Keyword Search**
+Use keywords with `=` to search specific fields:
+- `item=stone` - Find items containing "stone"
+- `tier=3` - Find exactly tier 3 items  
+- `container=carving` - Find items in containers with "carving" in the name
+- `building=workshop` - Find items in workshops
+- `crafter=john` - Find items crafted by players with "john" in their name
 
-### Advanced Features
+#### **Comparison Operators**
+Use operators for precise numeric filtering:
+- `tier>3` - Tier greater than 3
+- `qty<100` - Quantity less than 100 (`qty` is shortcut for `quantity`)
+- `tier>=4` - Tier 4 or higher
+- `tier<=2` - Tier 2 or lower
+- `tier!=3` - Not tier 3
 
-#### Search Functionality
-- **Real-time Search**: Type in the search bar to instantly filter results
-- **Multi-field Search**: Search across item names, tags, and other properties
-- **Clear Search**: Use the "Clear" button to reset search filters
+#### **Combined Search**
+Mix multiple keywords and regular terms:
+- `item=plank tier>2 qty<50` - Planks that are tier 3+ with less than 50 quantity
+- `stone tier>1` - Items containing "stone" that are tier 2+
+- `container=carving tier=5` - Tier 5 items in carving containers
+- `building!=workshop crafter=alice` - Items crafted by Alice outside workshops
 
-#### Filtering & Sorting
-- **Column Headers**: Click the dropdown arrow (▼) on any column header
-- **Sort Options**: Choose ascending or descending order
-- **Value Filters**: Select specific values to show or hide
-- **Combined Filters**: Use multiple filters simultaneously
-- **Clear Filters**: Remove individual or all filters easily
+#### **Multiple Conditions Per Field**
+Apply multiple conditions to the same field (ALL must be true):
+- `item=log item!=package qty<500` - Log items under 500 that don't contain "package"
+- `tier>2 tier<6` - Items with tier 3, 4, or 5
+- `qty>=10 qty<=100` - Items with quantity between 10-100 (inclusive)
+- `building=workshop building!=forge` - Workshop buildings that aren't forges
+- `item=stone item!=refined tier>1` - Stone items (not refined) above tier 1
 
-### Understanding the Data
+#### **Tab-Specific Keywords**
+Each tab supports different keywords based on available data:
 
-- **Quantities**: Shows total amounts across all storage buildings
-- **Tiers**: Items are organized by their tier level (T1, T2, T3, etc.)
-- **Tags**: Categories and metadata for items (e.g., "Building Material", "Tool")
-- **Timestamps**: Last update times for data freshness indicators
-- **Remaining Time**: For passive crafting timers, shows exact time remaining until completion
-- **Completion Status**: "READY" indicates when crafting operations are finished
+**Claim Inventory:**
+- `item=`, `tier=`, `qty=`, `tag=`, `container=`
+
+**Passive/Active Crafting:**
+- `item=`, `tier=`, `qty=`, `tag=`, `building=`, `crafter=`, `time=`
+
+**Traveler Tasks:**
+- `item=`, `tier=`, `qty=`, `tag=`, `traveler=`, `status=`
+
+#### **Saving and Loading Queries**
+- **Save Queries**: You can save your search queries for later use, making it easy to reuse complex filters.
+- **Load/Delete Queries**: Access saved queries from the search bar menu to quickly load or delete them as needed.
+
+#### **Tips**
+- **Case Insensitive**: All searches work regardless of capitalization
+- **Partial Matching**: `item=plan` matches "plank", "plans", "airplane"  
+- **Live Updates**: Results update in real-time as your game data changes
+- **Escape Key**: Press `Escape` to quickly clear the search field
 
 ## ⚙️ Configuration
 
@@ -171,6 +153,10 @@ The application uses reference data files to interpret game data:
 The application automatically creates a `player_data.json` file to store:
 - Last used player name
 - Preferred region selection
+- Theme settings (Light/Dark)
+- Activity log
+
+On Windows, these files are stored in `%APPDATA%/BitCraftCompanion`.
 
 ### Secure Storage
 
@@ -179,43 +165,75 @@ Sensitive data is stored in Windows Credential Manager:
 - Email addresses
 - Access credentials
 
-## 🚨 Troubleshooting
+### ❓ Frequently Asked Questions
+#### 📋 Why are my tables not loading?
 
-### Why aren't my notifications working?
+This issue is still under investigation. Current findings suggest that slow or unstable internet connections can interrupt the WebSocket connection while the application loads reference data. If your tables are not loading, try waiting a few minutes—data may eventually appear once the connection stabilizes.
 
-**Problem**: The most common issue is that Windows Focus Assist (Do Not Disturb mode) automatically turns on while playing games, blocking all notifications.
+**Tips:**
+- Check your internet connection speed and stability.
+- Restart BitCraft Companion if the issue persists.
+- Avoid heavy network usage during application startup.
+- If problems continue, report the issue with details about your network environment.
 
-**Solution**:
-1. **Open Windows Settings** by pressing `WIN + I` or searching "Settings" from the Start Menu
-2. **Navigate to System → Focus assist** (alternatively, press `WIN + R` and run `ms-settings:quiethours`)
-3. **Find the "Automatic Rules" section** - you'll see these options are enabled by default:
-   - ✅ "When I'm playing a game"
-   - ✅ "When I'm using an app in full screen mode"
-4. **Disable both options** by clicking the toggle switches to turn them OFF
-5. **Restart BitCraft Companion** to ensure changes take effect
+#### 💬 Why aren't my notifications working?
 
-**Additional Notification Troubleshooting**:
-- Verify Windows notifications are enabled for the application in Windows Settings → Notifications
-- Test notifications using the "Test Notification" button in the BitCraft Companion Settings window
-- Ensure your Windows sound is not muted (notifications include audio cues)
-- Check that BitCraft Companion has notification permissions
+**Problem:**  
+Windows Focus Assist (Do Not Disturb mode) may automatically enable during gaming, blocking notifications.
 
-### Other Common Issues
+**Solution:**  
+1. Open **Windows Settings** (`WIN + I` or search "Settings" in the Start Menu).
+2. Go to **System → Focus assist** (or `WIN + R`, run `ms-settings:quiethours`).
+3. In **Automatic Rules**, locate:
+  - "When I'm playing a game"
+  - "When I'm using an app in full screen mode"
+4. **Disable** both options by toggling them OFF.
+5. **Restart BitCraft Companion** for changes to apply.
 
-#### Windows Security Scanning
-- **PyInstaller executables** may trigger Windows Defender scanning on first run
-- **This is normal behavior** for compiled Python applications
-- **Solutions**: Add BitCraft Companion to Windows Defender exclusions or run from source
+**Additional Tips:**
+- Ensure Windows notifications are enabled for BitCraft Companion (**Settings → Notifications**).
+- Use the "Test Notification" button in the app's Settings window.
+- Confirm your Windows sound is not muted.
+- Check notification permissions for BitCraft Companion.
 
-#### Performance Notes
-- **Large inventories** (1000+ unique items) may take a few seconds to load initially
-- **Real-time search** is optimized but may slow slightly with very large datasets
-- **Multiple claims** with extensive data may impact switching speed
+---
 
-#### Connection Issues
-- **VPN interference**: Some VPNs may block WebSocket connections to BitCraft servers
-- **Firewall blocks**: Ensure BitCraft Companion can access the internet
-- **Server maintenance**: BitCraft server downtime will prevent data loading
+#### 🔄 Why aren't my Traveler's Tasks updating?
+
+BitCraft Companion syncs Traveler's Tasks in real time via the game servers. If the game isn't running or you're logged in with a different account, updates won't appear.
+
+**Checklist:**
+- BitCraft game is open and running.
+- Logged in with the same account in both BitCraft and BitCraft Companion.
+- After switching claims/accounts, wait a few seconds for sync.
+
+**Still not updating?**  
+Use "Force Refresh" in the Settings menu to reload claim and task data.
+
+---
+
+#### 🌗 Why doesn't the Light theme look right?
+
+The Light theme is a work in progress. Some UI elements and colors may not display correctly. Improvements are planned for future releases.
+
+---
+
+#### ⚠️ Other Common Issues
+
+**Windows Security Scanning**
+- PyInstaller executables may trigger Windows Defender scans on first run.
+- This is normal for compiled Python apps.
+- To resolve: Add BitCraft Companion to Defender exclusions or run from source.
+
+**Performance Notes**
+- Large inventories (1000+ items) may take a few seconds to load.
+- Real-time search is optimized but may slow with very large datasets.
+- Switching between multiple claims with extensive data may be slower.
+
+**Connection Issues**
+- VPNs may block WebSocket connections to BitCraft servers.
+- Firewalls may prevent BitCraft Companion from accessing the internet.
+- BitCraft server maintenance can temporarily prevent data loading.
 
 ## 📝 License
 This project is licensed under the MIT License. See the [LICENSE](./LICENSE) file for details.

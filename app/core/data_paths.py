@@ -6,6 +6,7 @@ and user-writable data (like player_data.json) that needs to work
 correctly in both development and EXE distribution modes.
 """
 
+import shutil
 import os
 import sys
 import logging
@@ -142,7 +143,6 @@ def migrate_user_data_files():
         if os.path.exists(source_path):
             try:
                 # Move file to AppData directory (not copy, to avoid duplicates)
-                import shutil
 
                 shutil.move(source_path, target_path)
                 logging.info(f"Migrated {filename} from {app_dir} to user data directory: {target_path}")

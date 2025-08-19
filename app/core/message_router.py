@@ -251,7 +251,6 @@ class MessageRouter:
                 for i, insert_str in enumerate(inserts[:5]):  # Only validate first 5 records
                     try:
                         if isinstance(insert_str, str):
-                            import json
                             data = json.loads(insert_str)
                         else:
                             data = insert_str

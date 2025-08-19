@@ -3,7 +3,6 @@ import logging
 import os
 import re
 import socket
-import sqlite3
 import threading
 import time
 import uuid
@@ -89,7 +88,6 @@ class BitCraft:
             # prevents unicode encoding errors
             safe_handler = SafeStreamHandler()
             safe_handler.setLevel(logging.INFO)
-            # unicode-safe logging
             ws_logger.addHandler(safe_handler)
             ws_logger.setLevel(logging.INFO)
 

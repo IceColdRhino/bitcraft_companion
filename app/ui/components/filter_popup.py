@@ -1,4 +1,5 @@
 import customtkinter as ctk
+from app.ui.themes import get_color, register_theme_callback
 
 
 class FilterPopup(ctk.CTkToplevel):
@@ -13,6 +14,15 @@ class FilterPopup(ctk.CTkToplevel):
 
         # Make window resizable
         self.resizable(True, True)
+        
+        # Apply theme colors
+        self.configure(fg_color=get_color("BACKGROUND_PRIMARY"))
+        
+        # Store UI components for theme updates
+        self.ui_components = {}
+        
+        # Register for theme change notifications
+        register_theme_callback(self._on_theme_changed)
 
         self.header = header
         self.callback = callback
@@ -47,20 +57,40 @@ class FilterPopup(ctk.CTkToplevel):
         search_frame = ctk.CTkFrame(self, fg_color="transparent")
         search_frame.pack(fill="x", padx=10, pady=(10, 5))
 
-        ctk.CTkLabel(search_frame, text="Search:", font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w")
+        search_label = ctk.CTkLabel(search_frame, text="Search:", font=ctk.CTkFont(size=12, weight="bold"))
+        search_label.pack(anchor="w")
+        self.ui_components['search_label'] = search_label
+        
         self.search_entry = ctk.CTkEntry(
-            search_frame, textvariable=self.search_var, placeholder_text="Type to filter options...", height=32
+            search_frame, 
+            textvariable=self.search_var, 
+            placeholder_text="Type to filter options...", 
+            height=32,
+            fg_color=get_color("BACKGROUND_TERTIARY"),
+            border_color=get_color("BORDER_DEFAULT"),
+            text_color=get_color("TEXT_PRIMARY"),
+            placeholder_text_color=get_color("TEXT_DISABLED")
         )
         self.search_entry.pack(fill="x", pady=(5, 0))
+        self.ui_components['search_entry'] = self.search_entry
 
         # Select/Clear All buttons
         select_frame = ctk.CTkFrame(self, fg_color="transparent")
         select_frame.pack(fill="x", padx=10, pady=5)
 
         self.select_all_btn = ctk.CTkButton(
-            select_frame, text="Select All", command=self._select_all, width=100, height=28, font=ctk.CTkFont(size=11)
+            select_frame, 
+            text="Select All", 
+            command=self._select_all, 
+            width=100, 
+            height=28, 
+            font=ctk.CTkFont(size=11),
+            fg_color=get_color("STATUS_INFO"),
+            hover_color=get_color("BUTTON_HOVER"),
+            text_color=get_color("TEXT_PRIMARY")
         )
         self.select_all_btn.pack(side="left", padx=(0, 5))
+        self.ui_components['select_all_btn'] = self.select_all_btn
 
         self.clear_all_btn = ctk.CTkButton(
             select_frame,
@@ -69,17 +99,27 @@ class FilterPopup(ctk.CTkToplevel):
             width=100,
             height=28,
             font=ctk.CTkFont(size=11),
-            fg_color="gray",
+            fg_color=get_color("BACKGROUND_SECONDARY"),
+            hover_color=get_color("BUTTON_HOVER"),
+            text_color=get_color("TEXT_PRIMARY")
         )
         self.clear_all_btn.pack(side="left")
+        self.ui_components['clear_all_btn'] = self.clear_all_btn
 
         # Selection count label
-        self.count_label = ctk.CTkLabel(select_frame, text="", font=ctk.CTkFont(size=10), text_color="#888888")
+        self.count_label = ctk.CTkLabel(
+            select_frame, 
+            text="", 
+            font=ctk.CTkFont(size=10), 
+            text_color=get_color("TEXT_SECONDARY")
+        )
         self.count_label.pack(side="right")
+        self.ui_components['count_label'] = self.count_label
 
         # Scrollable checkbox list
-        self.scrollable_frame = ctk.CTkScrollableFrame(self, fg_color="#2a2d2e")
+        self.scrollable_frame = ctk.CTkScrollableFrame(self, fg_color=get_color("BACKGROUND_SECONDARY"))
         self.scrollable_frame.pack(fill="both", expand=True, padx=10, pady=5)
+        self.ui_components['scrollable_frame'] = self.scrollable_frame
 
         # Create checkboxes for all unique values
         self.checkboxes = []
@@ -103,14 +143,28 @@ class FilterPopup(ctk.CTkToplevel):
         btn_frame.pack(fill="x", padx=10, pady=10)
 
         self.apply_btn = ctk.CTkButton(
-            btn_frame, text="Apply", command=self._apply_filters, width=100, fg_color="#1f6aa5", hover_color="#2c7bc7"
+            btn_frame, 
+            text="Apply", 
+            command=self._apply_filters, 
+            width=100, 
+            fg_color=get_color("STATUS_SUCCESS"),
+            hover_color=get_color("STATUS_SUCCESS"),
+            text_color=get_color("TEXT_PRIMARY")
         )
         self.apply_btn.pack(side="right", padx=(5, 0))
+        self.ui_components['apply_btn'] = self.apply_btn
 
         cancel_btn = ctk.CTkButton(
-            btn_frame, text="Cancel", command=self.destroy, width=100, fg_color="gray", hover_color="#666666"
+            btn_frame, 
+            text="Cancel", 
+            command=self.destroy, 
+            width=100, 
+            fg_color=get_color("BACKGROUND_SECONDARY"),
+            hover_color=get_color("BUTTON_HOVER"),
+            text_color=get_color("TEXT_PRIMARY")
         )
         cancel_btn.pack(side="right")
+        self.ui_components['cancel_btn'] = cancel_btn
 
         # Initial count update
         self._update_count_label()
@@ -163,9 +217,9 @@ class FilterPopup(ctk.CTkToplevel):
         visible_selected = sum(1 for cb in self.visible_checkboxes if self.check_vars[cb.cget("text")].get())
 
         if visible_selected == len(self.visible_checkboxes):
-            self.select_all_btn.configure(text="✓ All Selected", fg_color="#4CAF50")
+            self.select_all_btn.configure(text="✓ All Selected", fg_color=get_color("STATUS_SUCCESS"))
         else:
-            self.select_all_btn.configure(text="Select All", fg_color="#1f6aa5")
+            self.select_all_btn.configure(text="Select All", fg_color=get_color("STATUS_INFO"))
 
     def _update_count_label(self):
         """Updates the selection count label."""
@@ -190,3 +244,63 @@ class FilterPopup(ctk.CTkToplevel):
 
         self.callback(self.header, selected_values)
         self.destroy()
+    
+    def _on_theme_changed(self, old_theme: str, new_theme: str):
+        """Handle theme change by updating UI colors."""
+        try:
+            # Update window background
+            self.configure(fg_color=get_color("BACKGROUND_PRIMARY"))
+            
+            # Update all stored UI components
+            if 'search_entry' in self.ui_components:
+                self.ui_components['search_entry'].configure(
+                    fg_color=get_color("BACKGROUND_TERTIARY"),
+                    border_color=get_color("BORDER_DEFAULT"),
+                    text_color=get_color("TEXT_PRIMARY"),
+                    placeholder_text_color=get_color("TEXT_DISABLED")
+                )
+            
+            if 'scrollable_frame' in self.ui_components:
+                self.ui_components['scrollable_frame'].configure(
+                    fg_color=get_color("BACKGROUND_SECONDARY")
+                )
+            
+            if 'select_all_btn' in self.ui_components:
+                self.ui_components['select_all_btn'].configure(
+                    fg_color=get_color("STATUS_INFO"),
+                    hover_color=get_color("BUTTON_HOVER"),
+                    text_color=get_color("TEXT_PRIMARY")
+                )
+            
+            if 'clear_all_btn' in self.ui_components:
+                self.ui_components['clear_all_btn'].configure(
+                    fg_color=get_color("BACKGROUND_SECONDARY"),
+                    hover_color=get_color("BUTTON_HOVER"),
+                    text_color=get_color("TEXT_PRIMARY")
+                )
+            
+            if 'apply_btn' in self.ui_components:
+                self.ui_components['apply_btn'].configure(
+                    fg_color=get_color("STATUS_SUCCESS"),
+                    hover_color=get_color("STATUS_SUCCESS"),
+                    text_color=get_color("TEXT_PRIMARY")
+                )
+            
+            if 'cancel_btn' in self.ui_components:
+                self.ui_components['cancel_btn'].configure(
+                    fg_color=get_color("BACKGROUND_SECONDARY"),
+                    hover_color=get_color("BUTTON_HOVER"),
+                    text_color=get_color("TEXT_PRIMARY")
+                )
+            
+            if 'count_label' in self.ui_components:
+                self.ui_components['count_label'].configure(
+                    text_color=get_color("TEXT_SECONDARY")
+                )
+            
+            # Update the dynamic select all button state colors
+            self._update_select_buttons()
+            
+        except Exception as e:
+            # Silent fail to avoid disrupting the filter popup functionality
+            pass
