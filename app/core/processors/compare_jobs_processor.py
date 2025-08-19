@@ -11,10 +11,6 @@ from .base_processor import BaseProcessor
 from app.models import (
     CharacterStatState,
     MarketOrderState,
-    # Reference data dataclasses
-    CraftingRecipeDesc,
-    ExtractionRecipeDesc,
-    ItemListDesc
 )
 
 
@@ -233,9 +229,11 @@ class CompareJobsProcessor(BaseProcessor):
                 # TODO: Get actual tool powers
                 # Temporary fallback value
                 tool_power = 10
+                skill_power = 0
+                total_power = tool_power + skill_power
 
                 job_actions = recipe["actions_required"]
-                total_swings = int(np.ceil(job_actions/tool_power))
+                total_swings = int(np.ceil(job_actions/total_power))
 
                 job_time = swing_speed*total_swings
                 job_stamina = recipe["stamina_requirement"]*total_swings
@@ -283,6 +281,7 @@ class CompareJobsProcessor(BaseProcessor):
                     "actions_required": job_actions,
                     "allow_use_hands": job_hands,
                     "is_passive": job_passive,
+                    "total_power": total_power,
                     "swing_speed": swing_speed,
                     "cost": job_cost,
                     "gross": job_gross,
@@ -318,6 +317,8 @@ class CompareJobsProcessor(BaseProcessor):
                 # TODO: Get actual tool powers
                 # Temporary fallback value
                 tool_power = 10
+                skill_power = 0
+                total_power = tool_power + skill_power
 
                 combined_speed = (gather_speed - 1)+skill_speed
                 # swing_speed is in [seconds/swing], as in the game
@@ -325,7 +326,7 @@ class CompareJobsProcessor(BaseProcessor):
 
                 # Default node extraction calculation
                 job_actions = resource["max_health"]
-                total_swings = int(np.ceil(job_actions/tool_power))
+                total_swings = int(np.ceil(job_actions/total_power))
                 job_time = swing_speed*total_swings
 
                 # Manually inject despawn times into specific resource ids,
@@ -352,7 +353,7 @@ class CompareJobsProcessor(BaseProcessor):
                 if job_time>resource["despawn_time"]*3600 and resource["despawn_time"]!=0.0:
                     job_time = resource["despawn_time"]*3600
                     total_swings = int(np.floor(job_time/swing_speed))
-                    job_actions = total_swings*tool_power
+                    job_actions = total_swings*total_power
 
                 job_stamina = recipe["stamina_requirement"]*total_swings
                 job_durability = recipe["tool_durability_lost"]*total_swings
@@ -415,6 +416,7 @@ class CompareJobsProcessor(BaseProcessor):
                     "actions_required": job_actions,
                     "allow_use_hands": job_hands,
                     "is_passive": job_passive,
+                    "total_power": total_power,
                     "swing_speed": swing_speed,
                     "cost": job_cost,
                     "gross": job_gross,
@@ -444,6 +446,7 @@ class CompareJobsProcessor(BaseProcessor):
                 source["tool_durability_lost"] += target["tool_durability_lost"]
                 source["output_stacks"] = target["output_stacks"]
                 source["actions_required"] += target["actions_required"]
+                source["total_power"] = target["total_power"]
                 source["swing_speed"] = target["swing_speed"]
                 source["gross"] = target["gross"]
                 source["profit"] = source["gross"] - source["cost"]
@@ -491,6 +494,7 @@ class CompareJobsProcessor(BaseProcessor):
                         "actions_required": op["actions_required"],
                         "allow_use_hands": op["allow_use_hands"],
                         "is_passive": op["is_passive"],
+                        "total_power": op["total_power"],
                         "swing_speed": op["swing_speed"],
                         "cost": op["cost"],
                         "gross": op["gross"],
@@ -537,6 +541,7 @@ class CompareJobsProcessor(BaseProcessor):
                     "effort": job_data["actions_required"],
                     "use_hands": job_data["allow_use_hands"],
                     "passive": job_data["is_passive"],
+                    "total_power": job_data["total_power"],
                     "swing_speed": job_data["swing_speed"],
                     "cost": job_data["cost"],
                     "gross": job_data["gross"],
