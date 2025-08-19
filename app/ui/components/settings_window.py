@@ -20,7 +20,7 @@ class SettingsWindow(ctk.CTkToplevel):
         self.parent = parent
 
         # Window configuration - narrower and taller
-        self.title("Settings - BitCraft Companion")
+        self.title("Settings")
         self.geometry("450x500")
         self.resizable(False, False)
 
@@ -43,14 +43,14 @@ class SettingsWindow(ctk.CTkToplevel):
 
         # Get version information
         self.version_info = self._get_version_info()
-        
+
         # Store UI component references for theme updates
         self.card_frames = []
         self.ui_components = {}
-        
+
         # Register for theme change notifications
         register_theme_callback(self._on_theme_changed)
-        
+
         # Apply current theme
         self.configure(fg_color=get_color("BACKGROUND_PRIMARY"))
 
@@ -105,67 +105,62 @@ class SettingsWindow(ctk.CTkToplevel):
         """Create a card-style section container."""
         # Create card container with background and border
         card_frame = ctk.CTkFrame(
-            parent, 
+            parent,
             fg_color=get_color("BACKGROUND_SECONDARY"),
             corner_radius=8,
             border_width=1,
-            border_color=get_color("BORDER_DEFAULT")
+            border_color=get_color("BORDER_DEFAULT"),
         )
         card_frame.pack(fill="x", pady=(0, 15), padx=10)
-        
+
         # Store reference for theme updates
         self.card_frames.append(card_frame)
-        
+
         # Card content with proper padding
         content_frame = ctk.CTkFrame(card_frame, fg_color="transparent")
         content_frame.pack(fill="x", padx=15, pady=15)
-        
+
         # Section header inside card
-        header_label = ctk.CTkLabel(
-            content_frame, 
-            text=title, 
-            font=ctk.CTkFont(size=14, weight="bold"), 
-            anchor="w"
-        )
+        header_label = ctk.CTkLabel(content_frame, text=title, font=ctk.CTkFont(size=14, weight="bold"), anchor="w")
         header_label.pack(anchor="w", pady=(0, 10))
-        
+
         return content_frame
 
     def _create_widgets(self):
         """Create the settings interface with improved UX."""
         # Main scrollable container
-        main_frame = ctk.CTkScrollableFrame(self, fg_color="transparent")
-        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        self.main_frame = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        self.main_frame.pack(fill="both", expand=True, padx=20, pady=20)
 
         # Configure grid for left alignment
-        main_frame.grid_columnconfigure(0, weight=1)
+        self.main_frame.grid_columnconfigure(0, weight=1)
 
         # Account Section
-        account_content = self._create_card_section(main_frame, "Account")
+        account_content = self._create_card_section(self.main_frame, "Account")
         self._create_account_section(account_content)
 
         # Data Management Section
-        data_content = self._create_card_section(main_frame, "Data Management")
+        data_content = self._create_card_section(self.main_frame, "Data Management")
         self._create_data_management_section(data_content)
 
         # Notifications Section
-        notifications_content = self._create_card_section(main_frame, "Notifications")
+        notifications_content = self._create_card_section(self.main_frame, "Notifications")
         self._create_notifications_section(notifications_content)
 
         # Theme Section
-        theme_content = self._create_card_section(main_frame, "Theme")
+        theme_content = self._create_card_section(self.main_frame, "Theme")
         self._create_theme_section(theme_content)
 
         # About Section
-        about_content = self._create_card_section(main_frame, "About")
+        about_content = self._create_card_section(self.main_frame, "About")
         self._create_about_section(about_content)
 
         # Close button at bottom
-        close_frame = ctk.CTkFrame(self, fg_color="transparent")
-        close_frame.pack(fill="x", padx=20, pady=(10, 20))
+        self.close_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.close_frame.pack(fill="x", padx=20, pady=(10, 20))
 
         self.close_button = ctk.CTkButton(
-            close_frame,
+            self.close_frame,
             text="Close",
             command=self._on_closing,
             width=100,
@@ -258,39 +253,39 @@ class SettingsWindow(ctk.CTkToplevel):
 
     def _create_theme_section(self, parent):
         """Create the theme selection section."""
-        
+
         # Theme description
         desc_label = ctk.CTkLabel(
-            parent, 
+            parent,
             text="Choose your preferred color scheme and accessibility options:",
             font=ctk.CTkFont(size=12),
             text_color=("gray60", "gray40"),
-            anchor="w"
+            anchor="w",
         )
         desc_label.pack(fill="x", pady=(0, 10))
-        
+
         # Get current theme and available themes
         theme_manager = get_theme_manager()
         current_theme = theme_manager.get_current_theme_name()
         available_themes = get_theme_names()
-        
+
         # Theme selection dropdown
         self.theme_var = ctk.StringVar(value=current_theme)
-        
+
         # Create readable theme names for display
         theme_display_names = []
         self.theme_name_mapping = {}
-        
+
         for theme_name in available_themes:
             theme_info = get_theme_info(theme_name)
             display_name = theme_info["name"]
             theme_display_names.append(display_name)
             self.theme_name_mapping[display_name] = theme_name
-        
+
         # Set current display value
         current_display_name = get_theme_info(current_theme)["name"]
         self.theme_var.set(current_display_name)
-        
+
         theme_dropdown = ctk.CTkOptionMenu(
             parent,
             variable=self.theme_var,
@@ -301,23 +296,6 @@ class SettingsWindow(ctk.CTkToplevel):
             font=ctk.CTkFont(size=13),
         )
         theme_dropdown.pack(fill="x", pady=(0, 10))
-        
-        # Theme descriptions for each option
-        theme_descriptions = {
-            "Dark": "",
-            "Light": ""
-        }
-        
-        # Current theme description
-        current_desc = theme_descriptions.get(current_display_name, "Custom theme")
-        self.theme_desc_label = ctk.CTkLabel(
-            parent,
-            text=current_desc,
-            font=ctk.CTkFont(size=12),
-            text_color=("gray70", "gray30"),
-            anchor="w"
-        )
-        self.theme_desc_label.pack(fill="x", pady=(0, 5))
 
     def _create_about_section(self, parent):
         """Create the about section with version and debug info."""
@@ -416,7 +394,7 @@ class SettingsWindow(ctk.CTkToplevel):
                 file_path = get_user_data_path("player_data.json")
                 with open(file_path, "r") as f:
                     player_data = json.load(f)
-                    
+
                 # Extract settings from player_data, merge with defaults
                 saved_settings = player_data.get("settings", {})
                 if saved_settings:
@@ -426,9 +404,9 @@ class SettingsWindow(ctk.CTkToplevel):
                             default_settings[category].update(options)
                         else:
                             default_settings[category] = options
-                    
+
                 logging.info("Settings loaded from player_data.json")
-                
+
             except FileNotFoundError:
                 logging.info("No player_data.json found, using default settings")
             except json.JSONDecodeError:
@@ -449,14 +427,18 @@ class SettingsWindow(ctk.CTkToplevel):
         """Save settings to persistent storage."""
         try:
             # Update settings based on UI state (only if UI components exist)
-            if hasattr(self, 'passive_crafts_var') and hasattr(self, 'active_crafts_var'):
+            if hasattr(self, "passive_crafts_var") and hasattr(self, "active_crafts_var"):
                 self.settings["notifications"]["passive_crafts_enabled"] = self.passive_crafts_var.get()
                 self.settings["notifications"]["active_crafts_enabled"] = self.active_crafts_var.get()
             else:
                 logging.warning("Settings UI components not yet initialized, skipping UI state update")
 
             # Send updated settings to notification service
-            if hasattr(self.app, 'data_service') and self.app.data_service and hasattr(self.app.data_service, 'notification_service'):
+            if (
+                hasattr(self.app, "data_service")
+                and self.app.data_service
+                and hasattr(self.app.data_service, "notification_service")
+            ):
                 self.app.data_service.notification_service.update_settings(self.settings)
                 logging.info(f"Settings sent to notification service: {self.settings['notifications']}")
             else:
@@ -465,7 +447,7 @@ class SettingsWindow(ctk.CTkToplevel):
             # Save to player_data.json
             try:
                 file_path = get_user_data_path("player_data.json")
-                
+
                 # Load existing player data or create new
                 player_data = {}
                 try:
@@ -473,16 +455,16 @@ class SettingsWindow(ctk.CTkToplevel):
                         player_data = json.load(f)
                 except (FileNotFoundError, json.JSONDecodeError):
                     pass  # Start with empty dict if file doesn't exist or is corrupted
-                
+
                 # Update settings section
                 player_data["settings"] = self.settings
-                
+
                 # Write back to file
                 with open(file_path, "w") as f:
                     json.dump(player_data, f, indent=4)
-                
+
                 logging.info("Settings saved to player_data.json")
-                
+
             except Exception as e:
                 logging.error(f"Error saving to player_data.json: {e}")
 
@@ -502,25 +484,16 @@ class SettingsWindow(ctk.CTkToplevel):
             if not theme_name:
                 logging.error(f"Invalid theme display name: {selected_display_name}")
                 return
-            
+
             # Apply the theme
             theme_manager = get_theme_manager()
             success = theme_manager.set_theme(theme_name)
-            
+
             if success:
-                # Update description
-                theme_descriptions = {
-                    "Dark": "",
-                    "Light": ""
-                }
-                
-                new_desc = theme_descriptions.get(selected_display_name, "Custom theme")
-                self.theme_desc_label.configure(text=new_desc)
-                
                 logging.info(f"Theme changed to: {theme_name}")
             else:
                 logging.warning(f"Failed to change theme to: {theme_name}")
-                
+
         except Exception as e:
             logging.error(f"Error changing theme: {e}")
 
@@ -574,7 +547,7 @@ class SettingsWindow(ctk.CTkToplevel):
         """Show a test notification."""
         try:
             # Update notification service settings from UI (if UI components exist)
-            if hasattr(self, 'passive_crafts_var') and hasattr(self, 'active_crafts_var'):
+            if hasattr(self, "passive_crafts_var") and hasattr(self, "active_crafts_var"):
                 notification_settings = {
                     "passive_crafts_enabled": self.passive_crafts_var.get(),
                     "active_crafts_enabled": self.active_crafts_var.get(),
@@ -668,42 +641,35 @@ class SettingsWindow(ctk.CTkToplevel):
         try:
             # Update window background
             self.configure(fg_color=get_color("BACKGROUND_PRIMARY"))
-            
+
+            # Update main scrollable frame background (forces scrollbar refresh)
+            if hasattr(self, "main_frame"):
+                self.main_frame.configure(fg_color="transparent")
+
+            # Update close frame background
+            if hasattr(self, "close_frame"):
+                self.close_frame.configure(fg_color="transparent")
+
             # Update all card frames
             for card_frame in self.card_frames:
-                card_frame.configure(
-                    fg_color=get_color("BACKGROUND_SECONDARY"),
-                    border_color=get_color("BORDER_DEFAULT")
-                )
-            
+                card_frame.configure(fg_color=get_color("BACKGROUND_SECONDARY"), border_color=get_color("BORDER_DEFAULT"))
+
             # Update all buttons with theme colors
-            self.close_button.configure(
-                fg_color=get_color("STATUS_INFO"),
-                hover_color=get_color("BUTTON_HOVER")
-            )
-            
-            self.logout_button.configure(
-                fg_color=get_color("STATUS_ERROR"),
-                hover_color=get_color("STATUS_ERROR")
-            )
-            
-            self.refresh_button.configure(
-                fg_color=get_color("STATUS_INFO"),
-                hover_color=get_color("BUTTON_HOVER")
-            )
-            
-            self.export_button.configure(
-                fg_color=get_color("STATUS_SUCCESS"),
-                hover_color=get_color("STATUS_SUCCESS")
-            )
-            
-            if hasattr(self, 'test_button'):
-                self.test_button.configure(
-                    fg_color=get_color("STATUS_INFO"),
-                    hover_color=get_color("BUTTON_HOVER")
-                )
-                
+            self.close_button.configure(fg_color=get_color("STATUS_INFO"), hover_color=get_color("BUTTON_HOVER"))
+
+            self.logout_button.configure(fg_color=get_color("STATUS_ERROR"), hover_color=get_color("STATUS_ERROR"))
+
+            self.refresh_button.configure(fg_color=get_color("STATUS_INFO"), hover_color=get_color("BUTTON_HOVER"))
+
+            self.export_button.configure(fg_color=get_color("STATUS_SUCCESS"), hover_color=get_color("STATUS_SUCCESS"))
+
+            if hasattr(self, "test_button"):
+                self.test_button.configure(fg_color=get_color("STATUS_INFO"), hover_color=get_color("BUTTON_HOVER"))
+
+            # Force a visual refresh of the entire window
+            self.update_idletasks()
+
             logging.debug(f"Settings window theme changed from {old_theme} to {new_theme}")
-            
+
         except Exception as e:
             logging.error(f"Error updating settings window theme: {e}")

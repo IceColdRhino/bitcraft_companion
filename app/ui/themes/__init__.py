@@ -19,7 +19,9 @@ from .theme_definitions import (
     get_theme_info,
     get_default_theme,
     DarkTheme,
-    LightTheme
+    LightTheme,
+    HalloweenTheme,
+    ThemeColors
 )
 
 __all__ = [
@@ -36,5 +38,7 @@ __all__ = [
     'get_theme_info', 
     'get_default_theme',
     'DarkTheme',
-    'LightTheme'
+    'LightTheme',
+    'HalloweenTheme',
+    'ThemeColors'
 ]

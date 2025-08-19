@@ -105,6 +105,11 @@ class ClaimInventoryTab(ctk.CTkFrame):
         # Reapply treeview styling
         style = ttk.Style()
         TreeviewStyles.apply_treeview_style(style)
+        
+        # Reapply scrollbar styling
+        if hasattr(self, 'v_scrollbar_style') and hasattr(self, 'h_scrollbar_style'):
+            TreeviewStyles.apply_scrollbar_style(style, "ClaimInventory")
+        
         TreeviewStyles.configure_tree_tags(self.tree)
         
         # Reconfigure change tags with new theme colors

@@ -139,8 +139,14 @@ class MainWindow(ctk.CTk):
 
         # Create the claim info header
         logging.debug("Creating claim info header")
-        self.claim_info = ClaimInfoHeader(self, self)
+        # Note: Reference data will be updated later when DataService is fully initialized
+        self.claim_info = ClaimInfoHeader(self, self, reference_data=None)
         self.claim_info.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 5))
+        
+        # Try to get reference data immediately if available, with retry
+        if not self._update_claim_info_reference_data():
+            # If not available immediately, retry after a short delay
+            self.after(2000, self._retry_reference_data_update)
 
         # Create tab button frame with tab-like styling
         logging.debug("Creating tab button frame")
@@ -903,6 +909,21 @@ class MainWindow(ctk.CTk):
                     text_color=get_color("TEXT_PRIMARY"),
                 )
 
+            # Update save/load search buttons
+            if hasattr(self, "save_search_button"):
+                self.save_search_button.configure(
+                    fg_color=get_color("STATUS_SUCCESS"),
+                    hover_color=get_color("STATUS_SUCCESS"),
+                    text_color=get_color("TEXT_PRIMARY"),
+                )
+                
+            if hasattr(self, "load_search_button"):
+                self.load_search_button.configure(
+                    fg_color=get_color("STATUS_INFO"),
+                    hover_color=get_color("BUTTON_HOVER"),
+                    text_color=get_color("TEXT_PRIMARY"),
+                )
+
             # Update other UI components that need theme updates
             # The individual tabs will handle their own theme updates via their own callbacks
 
@@ -1612,6 +1633,23 @@ class MainWindow(ctk.CTk):
                         self.received_data_types.add("claim_info")
                         self._check_all_data_loaded()
 
+                elif msg_type == "reference_data_update":
+                    # Update ClaimInfoHeader when claim_tile_cost data changes
+                    table_name = msg_data.get('table', '')
+                    if table_name == "claim_tile_cost" or table_name == "":  # Empty means initial load
+                        try:
+                            # Get reference data from any processor that has it
+                            reference_data = None
+                            for processor in getattr(self.data_service, "processors", []):
+                                if hasattr(processor, "reference_data") and processor.reference_data:
+                                    reference_data = processor.reference_data
+                                    break
+                            
+                            if reference_data and hasattr(self, "claim_info") and self.claim_info:
+                                self.claim_info.update_reference_data(reference_data)
+                        except Exception as e:
+                            logging.error(f"Error updating ClaimInfoHeader reference data: {e}")
+
                 elif msg_type == "claim_switching":
                     self._handle_claim_switching_message(msg_data)
 
@@ -1712,3 +1750,30 @@ class MainWindow(ctk.CTk):
         if hasattr(self.data_service, "get_current_claim_info"):
             return self.data_service.get_current_claim_info()
         return {}
+
+    def _update_claim_info_reference_data(self):
+        """Try to update ClaimInfoHeader with reference data if available."""
+        try:
+            if hasattr(self, "data_service") and self.data_service:
+                # Get reference data from any processor that has it
+                reference_data = None
+                for processor in getattr(self.data_service, "processors", []):
+                    if hasattr(processor, "reference_data") and processor.reference_data:
+                        reference_data = processor.reference_data
+                        break
+                
+                if reference_data and hasattr(self, "claim_info") and self.claim_info:
+                    self.claim_info.update_reference_data(reference_data)
+                    return True
+            return False
+        except Exception as e:
+            logging.error(f"Error updating ClaimInfoHeader initial reference data: {e}")
+            return False
+
+    def _retry_reference_data_update(self):
+        """Retry updating ClaimInfoHeader with reference data."""
+        try:
+            if not self._update_claim_info_reference_data():
+                logging.debug("Reference data still not available after retry")
+        except Exception as e:
+            logging.error(f"Error in reference data retry: {e}")

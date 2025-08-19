@@ -34,7 +34,7 @@ class ThemeManager:
         
         # Load saved theme preference
         self._load_theme_preference()
-        self._update_current_colors()
+        self._update_current_theme()
         
         logging.info(f"ThemeManager initialized with theme: {self.current_theme_name}")
     
@@ -75,7 +75,7 @@ class ThemeManager:
         except Exception as e:
             logging.error(f"Error saving theme preference: {e}")
     
-    def _update_current_colors(self):
+    def _update_current_theme(self):
         """Update the current theme colors based on the selected theme."""
         theme_info = get_theme_info(self.current_theme_name)
         self.current_theme_colors = theme_info["colors"]
@@ -112,7 +112,7 @@ class ThemeManager:
         
         old_theme = self.current_theme_name
         self.current_theme_name = theme_name
-        self._update_current_colors()
+        self._update_current_theme()
         
         # Save preference
         self._save_theme_preference()
@@ -134,7 +134,7 @@ class ThemeManager:
             str: Color value or fallback color if not found
         """
         if self.current_theme_colors is None:
-            self._update_current_colors()
+            self._update_current_theme()
         
         try:
             return getattr(self.current_theme_colors, color_name)
@@ -188,7 +188,7 @@ class ThemeManager:
             Dict[str, str]: Dictionary mapping color names to color values
         """
         if self.current_theme_colors is None:
-            self._update_current_colors()
+            self._update_current_theme()
         
         colors = {}
         for attr_name in dir(self.current_theme_colors):
@@ -254,3 +254,5 @@ def register_theme_callback(callback: Callable[[str, str], None]):
         callback: Function that takes (old_theme, new_theme) as parameters
     """
     get_theme_manager().register_theme_change_callback(callback)
+
+

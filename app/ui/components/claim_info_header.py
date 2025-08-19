@@ -20,10 +20,10 @@ class ClaimInfoHeader(ctk.CTkFrame):
     and time remaining until supplies are depleted based on tile count.
     """
 
-    def __init__(self, master, app):
+    def __init__(self, master, app, reference_data=None):
         super().__init__(master, fg_color=get_color("BACKGROUND_SECONDARY"), corner_radius=8)
         self.app = app
-        
+
         # Register for theme change notifications
         register_theme_callback(self._on_theme_changed)
 
@@ -43,10 +43,56 @@ class ClaimInfoHeader(ctk.CTkFrame):
         self.task_refresh_time = "Unknown"
         self._is_initial_loading = True  # Track if we're in initial loading phase
 
-        # Initialize tile cost lookup with default values
-        self.tile_cost_lookup = {1: 0.01, 1001: 0.0125}  # Default tile cost values
+        self.reference_data = reference_data
+        self.tile_cost_lookup = {}
+        self.has_accurate_tile_costs = False
+        self._build_tile_cost_lookup()
 
         self._create_widgets()
+
+    def _build_tile_cost_lookup(self):
+        """Build tile cost lookup dictionary from reference data."""
+        try:
+            if self.reference_data and "claim_tile_cost" in self.reference_data:
+                # Clear existing lookup
+                self.tile_cost_lookup = {}
+
+                # Build lookup from reference data
+                claim_tile_costs = self.reference_data["claim_tile_cost"]
+                for cost_tier in claim_tile_costs:
+                    tile_count = cost_tier.get("tile_count")
+                    cost_per_tile = cost_tier.get("cost_per_tile")
+
+                    if tile_count is not None and cost_per_tile is not None:
+                        self.tile_cost_lookup[tile_count] = cost_per_tile
+
+                self.has_accurate_tile_costs = True
+                logging.debug(f"Built tile cost lookup with {len(self.tile_cost_lookup)} tiers")
+            else:
+                # Fallback to default values if no reference data
+                self.tile_cost_lookup = {1: 0.01, 1001: 0.0125}
+                self.has_accurate_tile_costs = False
+                logging.debug("No claim_tile_cost reference data available, using fallback values")
+
+        except Exception as e:
+            logging.error(f"Error building tile cost lookup: {e}")
+            # Fallback to default values on error
+            self.tile_cost_lookup = {1: 0.01, 1001: 0.0125}
+            self.has_accurate_tile_costs = False
+
+    def update_reference_data(self, reference_data):
+        """Update reference data and rebuild tile cost lookup."""
+        try:
+            self.reference_data = reference_data
+            self._build_tile_cost_lookup()
+
+            # Recalculate supplies per hour with new data
+            if self.tile_count > 0:
+                self.supplies_per_hour = self._calculate_supplies_per_hour(self.tile_count)
+                self._update_supplies_runout()
+
+        except Exception as e:
+            logging.error(f"Error updating reference data in ClaimInfoHeader: {e}")
 
     def _calculate_supplies_per_hour(self, tile_count):
         """
@@ -58,15 +104,21 @@ class ClaimInfoHeader(ctk.CTkFrame):
         sorted_tile_counts = sorted(self.tile_cost_lookup.keys())
         if tile_count in self.tile_cost_lookup:
             cost_per_tile = self.tile_cost_lookup[tile_count]
+            tier_used = tile_count
         elif tile_count <= sorted_tile_counts[0]:
             cost_per_tile = self.tile_cost_lookup[sorted_tile_counts[0]]
+            tier_used = sorted_tile_counts[0]
         elif tile_count >= sorted_tile_counts[-1]:
             cost_per_tile = self.tile_cost_lookup[sorted_tile_counts[-1]]
+            tier_used = sorted_tile_counts[-1]
         else:
             # Use the largest tile_count less than or equal to the current tile_count
             lower_tiles = max(t for t in sorted_tile_counts if t <= tile_count)
             cost_per_tile = self.tile_cost_lookup[lower_tiles]
-        return tile_count * cost_per_tile
+            tier_used = lower_tiles
+
+        supplies_per_hour = tile_count * cost_per_tile
+        return supplies_per_hour
 
     def _create_widgets(self):
         """Creates and arranges the header widgets."""
@@ -80,16 +132,16 @@ class ClaimInfoHeader(ctk.CTkFrame):
     def _create_claim_info_section(self):
         """Creates the left side claim information display with CTkOptionMenu dropdown."""
         claim_frame = ctk.CTkFrame(self, fg_color="transparent")
-        claim_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=10)  
-        claim_frame.grid_columnconfigure(0, weight=1)  
+        claim_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=10)
+        claim_frame.grid_columnconfigure(0, weight=1)
 
         # Create frame for dropdown and buttons
         dropdown_frame = ctk.CTkFrame(claim_frame, fg_color="transparent")
         dropdown_frame.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 12))
-        
+
         # Configure grid weights for proper spacing
         dropdown_frame.grid_columnconfigure(0, weight=0)  # Dropdown - fixed size
-        dropdown_frame.grid_columnconfigure(1, weight=0)  # Activity - fixed size  
+        dropdown_frame.grid_columnconfigure(1, weight=0)  # Activity - fixed size
         dropdown_frame.grid_columnconfigure(2, weight=0)  # Settings - fixed size
         dropdown_frame.grid_columnconfigure(3, weight=1)  # Spacer - expandable
         dropdown_frame.grid_columnconfigure(4, weight=0)  # Quit - fixed size, right-aligned
@@ -152,7 +204,7 @@ class ClaimInfoHeader(ctk.CTkFrame):
         # Add tooltip to settings button
         self._add_tooltip(self.settings_button, "Open settings window to manage app preferences and data operations")
 
-        # Add quit button 
+        # Add quit button
         self.quit_button = ctk.CTkButton(
             dropdown_frame,
             text="Quit",
@@ -182,7 +234,9 @@ class ClaimInfoHeader(ctk.CTkFrame):
         self.supplies_value_label = supplies_frame.winfo_children()[1]
 
         # Supplies Run Out with icon
-        supplies_runout_frame = self._create_enhanced_info_item(info_frame, "⏱️ Depletes In", "Calculating...", get_color("STATUS_WARNING"))
+        supplies_runout_frame = self._create_enhanced_info_item(
+            info_frame, "⏱️ Depletes In", "Calculating...", get_color("STATUS_WARNING")
+        )
         supplies_runout_frame.grid(row=0, column=2, padx=(0, 20))
         self.supplies_runout_label = supplies_runout_frame.winfo_children()[1]
 
@@ -329,6 +383,13 @@ class ClaimInfoHeader(ctk.CTkFrame):
     def _update_supplies_runout(self):
         """Calculates and updates the time until supplies run out based on tile count."""
         try:
+            # Show loading state if we don't have accurate tile cost data yet
+            if not self.has_accurate_tile_costs:
+                self.time_remaining = "Loading..."
+                color = "#cccccc"
+                self.supplies_runout_label.configure(text=self.time_remaining, text_color=color)
+                return
+
             if self.supplies_per_hour <= 0:
                 self.time_remaining = "N/A"
                 color = "#cccccc"
@@ -385,7 +446,7 @@ class ClaimInfoHeader(ctk.CTkFrame):
     def _open_activity_window(self):
         """Opens the activity logs window."""
         try:
-            if hasattr(self.app, '_open_activity_window'):
+            if hasattr(self.app, "_open_activity_window"):
                 self.app._open_activity_window()
             else:
                 logging.warning("Main app does not have _open_activity_window method")
@@ -576,7 +637,7 @@ class ClaimInfoHeader(ctk.CTkFrame):
             # Mark the source of this update for timer logic
             self._last_update_source = source
             self._from_initial_subscription = is_initial_subscription
-            
+
             # Mark that we've received initial data
             if is_initial_subscription:
                 self._is_initial_loading = False
@@ -625,10 +686,12 @@ class ClaimInfoHeader(ctk.CTkFrame):
                             color = "#f44336"  # Red for error
                     else:
                         # App is running normally - auto-reset to 4 hours
-                        logging.info(f"Timer expired during normal operation, auto-resetting to 4 hours (expired_for={expired_duration:.1f}s)")
-                        four_hours_from_now = current_time_seconds + (4 * 60 * 60)  
+                        logging.info(
+                            f"Timer expired during normal operation, auto-resetting to 4 hours (expired_for={expired_duration:.1f}s)"
+                        )
+                        four_hours_from_now = current_time_seconds + (4 * 60 * 60)
                         self.traveler_tasks_expiration = four_hours_from_now
-                        
+
                         # Recalculate with new expiration
                         time_diff_seconds = self.traveler_tasks_expiration - current_time_seconds
                         # Fall through to normal countdown logic below
@@ -701,7 +764,7 @@ class ClaimInfoHeader(ctk.CTkFrame):
     def update_task_refresh_retry_status(self, status, message, delay=0):
         """
         Update task refresh display with retry status information.
-        
+
         Args:
             status: "retrying" or "failed"
             message: Display message for the user
@@ -710,20 +773,20 @@ class ClaimInfoHeader(ctk.CTkFrame):
         try:
             if status == "retrying":
                 self.task_refresh_time = message
-                color = get_color("STATUS_WARNING")  
-                
+                color = get_color("STATUS_WARNING")
+
                 # Start countdown for retry delay if delay > 0
                 if delay > 0:
                     self._start_retry_countdown(delay)
-                    
+
             elif status == "failed":
                 self.task_refresh_time = "Connection failed"
-                color = get_color("STATUS_ERROR")  
-                
+                color = get_color("STATUS_ERROR")
+
             # Update the label
             self.task_refresh_label.configure(text=self.task_refresh_time, text_color=color)
             logging.debug(f"Task refresh retry status updated: {status} - {message}")
-            
+
         except Exception as e:
             logging.error(f"Error updating task refresh retry status: {e}")
 
@@ -732,26 +795,26 @@ class ClaimInfoHeader(ctk.CTkFrame):
         try:
             self._retry_countdown_remaining = delay
             self._update_retry_countdown()
-            
+
         except Exception as e:
             logging.error(f"Error starting retry countdown: {e}")
 
     def _update_retry_countdown(self):
         """Update retry countdown display."""
         try:
-            if hasattr(self, '_retry_countdown_remaining') and self._retry_countdown_remaining > 0:
+            if hasattr(self, "_retry_countdown_remaining") and self._retry_countdown_remaining > 0:
                 self.task_refresh_time = f"Retrying in {self._retry_countdown_remaining}s..."
                 self.task_refresh_label.configure(text=self.task_refresh_time, text_color=get_color("STATUS_WARNING"))
-                
+
                 self._retry_countdown_remaining -= 1
-                
+
                 # Schedule next update
                 self.after(1000, self._update_retry_countdown)
-            elif hasattr(self, '_retry_countdown_remaining'):
+            elif hasattr(self, "_retry_countdown_remaining"):
                 # Countdown finished
                 self.task_refresh_time = "Retrying now..."
                 self.task_refresh_label.configure(text=self.task_refresh_time, text_color=get_color("STATUS_WARNING"))
-                
+
         except Exception as e:
             logging.error(f"Error updating retry countdown: {e}")
 
@@ -786,19 +849,19 @@ class ClaimInfoHeader(ctk.CTkFrame):
     def _export_data(self):
         """Exports all table data to an Excel file using native file dialog."""
         try:
-            # Generate default filename 
+            # Generate default filename
             # Try multiple sources for the claim name
-            dropdown_value = self.claim_dropdown.get() if hasattr(self, 'claim_dropdown') else None
-            
+            dropdown_value = self.claim_dropdown.get() if hasattr(self, "claim_dropdown") else None
+
             # Try to find claim name from available claims using current claim ID
             claims_name = None
-            if self.current_claim_id and hasattr(self, 'available_claims'):
+            if self.current_claim_id and hasattr(self, "available_claims"):
                 for claim in self.available_claims:
                     claim_entity_id = claim.get("entity_id") or claim.get("claim_id")
                     if str(claim_entity_id) == str(self.current_claim_id):
                         claims_name = claim.get("claim_name") or claim.get("name")
                         break
-            
+
             # Choose the best available claim name
             if self.claim_name and self.claim_name not in ["Loading...", "Unknown Claim"]:
                 claim_name = self.claim_name
@@ -814,9 +877,11 @@ class ClaimInfoHeader(ctk.CTkFrame):
             else:
                 claim_name = "Unknown_Claim"
                 source = "fallback"
-            
-            logging.info(f"Export claim name source: {source} -> '{claim_name}' (self.claim_name: '{self.claim_name}', dropdown: '{dropdown_value}', claims_name: '{claims_name}')")
-            
+
+            logging.info(
+                f"Export claim name source: {source} -> '{claim_name}' (self.claim_name: '{self.claim_name}', dropdown: '{dropdown_value}', claims_name: '{claims_name}')"
+            )
+
             claim_name = claim_name.replace(" ", "_").replace("/", "-")
             claim_id = self.current_claim_id if self.current_claim_id else "unknown"
             date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -930,9 +995,9 @@ class ClaimInfoHeader(ctk.CTkFrame):
         """Maps header names to actual data field names for different tabs."""
         try:
             # Handle dataclass objects by converting to dict if needed
-            if hasattr(row_data, 'to_dict'):
+            if hasattr(row_data, "to_dict"):
                 row_dict = row_data.to_dict()
-            elif hasattr(row_data, '__dict__'):
+            elif hasattr(row_data, "__dict__"):
                 row_dict = row_data.__dict__
             else:
                 row_dict = row_data
@@ -942,9 +1007,9 @@ class ClaimInfoHeader(ctk.CTkFrame):
                 "Claim Inventory": {
                     "Item": "name",
                     "Tier": "tier",
-                    "Quantity": "quantity", 
+                    "Quantity": "quantity",
                     "Tag": "tag",
-                    "Containers": "containers"
+                    "Containers": "containers",
                 },
                 "Passive Crafting": {
                     "Item": "item_name",
@@ -954,23 +1019,23 @@ class ClaimInfoHeader(ctk.CTkFrame):
                     "Building": "building_name",
                     "Recipe": "recipe_name",
                     "Progress": "progress_percentage",
-                    "Time Left": "time_remaining"
+                    "Time Left": "time_remaining",
                 },
                 "Active Crafting": {
                     "Item": "item_name",
-                    "Quantity": "quantity", 
+                    "Quantity": "quantity",
                     "Tier": "tier",
                     "Tag": "tag",
                     "Building": "building_name",
                     "Recipe": "recipe_name",
-                    "Status": "status"
-                }
+                    "Status": "status",
+                },
             }
 
             # Get the mapping for this tab, default to generic mapping
             tab_mapping = header_mappings.get(tab_name, {})
             field_name = tab_mapping.get(header)
-            
+
             if field_name:
                 # Use the mapped field name
                 value = row_dict.get(field_name, "")
@@ -978,7 +1043,7 @@ class ClaimInfoHeader(ctk.CTkFrame):
                 # Fallback to generic header mapping
                 header_key = header.lower().replace(" ", "_").replace("'", "")
                 value = row_dict.get(header_key, row_dict.get(header.lower(), ""))
-            
+
             # Special handling for containers field
             if header == "Containers" and isinstance(value, dict):
                 # Convert containers dict to readable format
@@ -987,9 +1052,9 @@ class ClaimInfoHeader(ctk.CTkFrame):
                     return "; ".join(container_list)
                 else:
                     return "None"
-            
+
             return value
-            
+
         except Exception as e:
             logging.error(f"Error getting mapped value for header '{header}': {e}")
             return ""
@@ -1077,9 +1142,9 @@ class ClaimInfoHeader(ctk.CTkFrame):
         try:
             # Update main frame background
             self.configure(fg_color=get_color("BACKGROUND_SECONDARY"))
-            
+
             # Update claim dropdown if it exists
-            if hasattr(self, 'claim_dropdown'):
+            if hasattr(self, "claim_dropdown"):
                 self.claim_dropdown.configure(
                     text_color=get_color("TEXT_PRIMARY"),
                     fg_color=get_color("BACKGROUND_TERTIARY"),
@@ -1087,34 +1152,30 @@ class ClaimInfoHeader(ctk.CTkFrame):
                     button_hover_color=get_color("BUTTON_HOVER"),
                     dropdown_fg_color=get_color("BACKGROUND_TERTIARY"),
                     dropdown_hover_color=get_color("BUTTON_HOVER"),
-                    dropdown_text_color=get_color("TEXT_PRIMARY")
+                    dropdown_text_color=get_color("TEXT_PRIMARY"),
                 )
-            
+
             # Update activity button if it exists
-            if hasattr(self, 'activity_button'):
+            if hasattr(self, "activity_button"):
                 self.activity_button.configure(
-                    fg_color=get_color("TEXT_ACCENT"),
-                    hover_color=get_color("BUTTON_HOVER"),
-                    text_color=get_color("TEXT_PRIMARY")
+                    fg_color=get_color("TEXT_ACCENT"), hover_color=get_color("BUTTON_HOVER"), text_color=get_color("TEXT_PRIMARY")
                 )
-            
+
             # Update settings button if it exists
-            if hasattr(self, 'settings_button'):
+            if hasattr(self, "settings_button"):
                 self.settings_button.configure(
-                    fg_color=get_color("STATUS_INFO"),
-                    hover_color=get_color("BUTTON_HOVER"),
-                    text_color=get_color("TEXT_PRIMARY")
+                    fg_color=get_color("STATUS_INFO"), hover_color=get_color("BUTTON_HOVER"), text_color=get_color("TEXT_PRIMARY")
                 )
-            
+
             # Update quit button if it exists
-            if hasattr(self, 'quit_button'):
+            if hasattr(self, "quit_button"):
                 self.quit_button.configure(
                     fg_color=get_color("STATUS_ERROR"),
                     hover_color=get_color("STATUS_ERROR"),
-                    text_color=get_color("TEXT_PRIMARY")
+                    text_color=get_color("TEXT_PRIMARY"),
                 )
-                
+
             logging.debug(f"Claim info header theme changed from {old_theme} to {new_theme}")
-            
+
         except Exception as e:
             logging.error(f"Error updating claim info header theme: {e}")

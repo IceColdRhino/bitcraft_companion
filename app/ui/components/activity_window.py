@@ -7,6 +7,7 @@ from typing import Dict, List
 import customtkinter as ctk
 
 from app.core.data_paths import get_user_data_path
+from app.ui.themes import get_color, register_theme_callback
 
 
 class ActivityWindow(ctk.CTkToplevel):
@@ -14,33 +15,43 @@ class ActivityWindow(ctk.CTkToplevel):
 
     def __init__(self, parent):
         super().__init__(parent)
-        
+
         self.parent = parent
         self.activity_entries: List[Dict] = []
-        self.max_entries = 50  
-        self.activity_log_file = None  
+        self.max_entries = 50
+        self.activity_log_file = None
         
+        # Store UI component references for theme updates
+        self.ui_components = {}
+
         self._setup_window()
+        
+        # Register for theme change notifications
+        register_theme_callback(self._on_theme_changed)
+        
+        # Apply current theme
+        self.configure(fg_color=get_color("BACKGROUND_PRIMARY"))
+        
         self._create_widgets()
         self._setup_activity_log_file()
         self._load_existing_log()
 
     def _setup_window(self):
         """Configure the activity window."""
-        self.title("BitCraft Companion - Activity Log")
+        self.title("Activity Log")
         self.geometry("600x400")
         self.minsize(400, 300)
-        
+
         # Center the window on the parent
         self.transient(self.parent)
-        
+
         # Configure grid weights
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
-        
+
         # Set icon if parent has one
         try:
-            if hasattr(self.parent, 'iconbitmap'):
+            if hasattr(self.parent, "iconbitmap"):
                 self.iconbitmap(self.parent.winfo_toplevel().iconbitmap())
         except:
             pass
@@ -48,104 +59,111 @@ class ActivityWindow(ctk.CTkToplevel):
     def _create_widgets(self):
         """Create the activity window UI components."""
         # Header frame
-        header_frame = ctk.CTkFrame(self, fg_color="transparent")
-        header_frame.grid(row=0, column=0, sticky="ew", padx=20, pady=(20, 10))
-        header_frame.grid_columnconfigure(0, weight=1)
-        
+        self.header_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.header_frame.grid(row=0, column=0, sticky="ew", padx=20, pady=(20, 10))
+        self.header_frame.grid_columnconfigure(0, weight=1)
+
         # Title (removed emoji)
-        title_label = ctk.CTkLabel(
-            header_frame,
-            text="Recent Activity",
-            font=ctk.CTkFont(size=18, weight="bold"),
-            anchor="w"
+        self.title_label = ctk.CTkLabel(
+            self.header_frame, 
+            text="Recent Activity", 
+            font=ctk.CTkFont(size=18, weight="bold"), 
+            anchor="w",
+            text_color=get_color("TEXT_PRIMARY")
         )
-        title_label.grid(row=0, column=0, sticky="w")
-        
+        self.title_label.grid(row=0, column=0, sticky="w")
+
         # Controls frame
-        controls_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
-        controls_frame.grid(row=0, column=1, sticky="e")
-        
+        self.controls_frame = ctk.CTkFrame(self.header_frame, fg_color="transparent")
+        self.controls_frame.grid(row=0, column=1, sticky="e")
+
         # Clear button
         self.clear_button = ctk.CTkButton(
-            controls_frame,
+            self.controls_frame,
             text="Clear All",
             width=80,
             height=30,
             font=ctk.CTkFont(size=11),
             command=self.clear_log,
-            fg_color="#D32F2F",
-            hover_color="#B71C1C"
+            fg_color=get_color("STATUS_ERROR"),
+            hover_color=get_color("STATUS_ERROR"),
+            text_color=get_color("TEXT_PRIMARY")
         )
         self.clear_button.grid(row=0, column=0)
 
         # Main content frame
-        content_frame = ctk.CTkFrame(self)
-        content_frame.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 20))
-        content_frame.grid_columnconfigure(0, weight=1)
-        content_frame.grid_rowconfigure(0, weight=1)
+        self.content_frame = ctk.CTkFrame(
+            self,
+            fg_color=get_color("BACKGROUND_SECONDARY"),
+            border_width=1,
+            border_color=get_color("BORDER_DEFAULT")
+        )
+        self.content_frame.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 20))
+        self.content_frame.grid_columnconfigure(0, weight=1)
+        self.content_frame.grid_rowconfigure(0, weight=1)
 
         # Scrollable text area for activity log
         self.log_textbox = ctk.CTkTextbox(
-            content_frame,
-            font=ctk.CTkFont(size=11, family="Consolas"),
-            wrap="word"
+            self.content_frame, 
+            font=ctk.CTkFont(size=11, family="Consolas"), 
+            wrap="word",
+            fg_color=get_color("BACKGROUND_TERTIARY"),
+            text_color=get_color("TEXT_PRIMARY"),
+            border_width=1,
+            border_color=get_color("BORDER_DEFAULT")
         )
         self.log_textbox.grid(row=0, column=0, sticky="nsew", padx=15, pady=15)
-        
+
         # Make textbox read-only
         self.log_textbox.configure(state="disabled")
-        
+
         # Initialize with empty state
         self._refresh_display()
 
     def add_inventory_change(self, item_name: str, previous_qty: int, new_qty: int, change: int, player_name: str = None):
         """Add an inventory change entry to the activity log."""
         timestamp = datetime.now().strftime("%I:%M:%S %p")
-        
+
         if change > 0:
             action_text = f"+{change}"
         else:
             action_text = f"{change}"  # change is already negative
-        
+
         # Include player name in the message if available
         if player_name:
             message = f"{timestamp} [{player_name}] {item_name}: {previous_qty} → {new_qty} ({action_text})"
         else:
             message = f"{timestamp} {item_name}: {previous_qty} → {new_qty} ({action_text})"
-        
+
         entry = {
             "timestamp": timestamp,
             "type": "inventory_change",
             "item_name": item_name,
             "player_name": player_name,
-            "message": message
+            "message": message,
         }
-        
+
         self._add_entry(entry)
 
     def add_general_activity(self, message: str):
         """Add a general activity entry to the activity log."""
         timestamp = datetime.now().strftime("%I:%M:%S %p")
-        
-        entry = {
-            "timestamp": timestamp,
-            "type": "general",
-            "message": f"{timestamp} {message}"
-        }
-        
+
+        entry = {"timestamp": timestamp, "type": "general", "message": f"{timestamp} {message}"}
+
         self._add_entry(entry)
 
     def _add_entry(self, entry: Dict):
         """Add an entry to the activity log and update display."""
         self.activity_entries.append(entry)
-        
+
         # Keep only the most recent entries
         if len(self.activity_entries) > self.max_entries:
-            self.activity_entries = self.activity_entries[-self.max_entries:]
-        
+            self.activity_entries = self.activity_entries[-self.max_entries :]
+
         # Save to file automatically
         self._append_to_log_file(entry)
-        
+
         self._refresh_display()
 
     def _setup_activity_log_file(self):
@@ -154,7 +172,7 @@ class ActivityWindow(ctk.CTkToplevel):
             # Use the same directory structure as player_data.json
             self.activity_log_file = get_user_data_path("activity.log")
             logging.debug(f"Activity log file set to: {self.activity_log_file}")
-            
+
         except Exception as e:
             logging.error(f"Error setting up activity log file: {e}")
             self.activity_log_file = None
@@ -164,15 +182,15 @@ class ActivityWindow(ctk.CTkToplevel):
         if not self.activity_log_file or not os.path.exists(self.activity_log_file):
             logging.debug("No existing activity log file found")
             return
-        
+
         try:
-            with open(self.activity_log_file, 'r', encoding='utf-8') as f:
+            with open(self.activity_log_file, "r", encoding="utf-8") as f:
                 lines = f.readlines()
-            
+
             # Get last 50 lines (excluding header comments and empty lines)
-            recent_lines = [line.strip() for line in lines[-50:] if line.strip() and not line.startswith('#')]
+            recent_lines = [line.strip() for line in lines[-50:] if line.strip() and not line.startswith("#")]
             logging.debug(f"Found {len(lines)} total lines, {len(recent_lines)} recent non-comment lines to process")
-            
+
             # Parse lines back into entries
             loaded_count = 0
             for line in recent_lines:
@@ -180,50 +198,42 @@ class ActivityWindow(ctk.CTkToplevel):
                 # Or fallback for any format - just load as-is
                 try:
                     logging.debug(f"Processing log line: {line}")
-                    
+
                     # Try to extract timestamp (look for time pattern)
                     timestamp = "Unknown"
-                    
+
                     # Look for AM or PM pattern to extract timestamp
-                    time_pattern = r'(\d{1,2}:\d{2}:\d{2}\s+(AM|PM))'
+                    time_pattern = r"(\d{1,2}:\d{2}:\d{2}\s+(AM|PM))"
                     time_match = re.search(time_pattern, line)
-                    
+
                     if time_match:
                         timestamp = time_match.group(1)
                         logging.debug(f"Extracted timestamp: {timestamp}")
                     else:
                         logging.debug(f"No timestamp pattern found in line: {line[:30]}...")
-                    
-                    entry = {
-                        "timestamp": timestamp,
-                        "type": "loaded",
-                        "message": line
-                    }
+
+                    entry = {"timestamp": timestamp, "type": "loaded", "message": line}
                     self.activity_entries.append(entry)
                     loaded_count += 1
                     logging.debug(f"Successfully loaded entry {loaded_count}: {line[:50]}...")
-                        
+
                 except Exception as parse_error:
                     logging.warning(f"Failed to parse log line: {line[:50]}... Error: {parse_error}")
                     # Still add it as a simple entry
-                    entry = {
-                        "timestamp": "Unknown",
-                        "type": "loaded",
-                        "message": line
-                    }
+                    entry = {"timestamp": "Unknown", "type": "loaded", "message": line}
                     self.activity_entries.append(entry)
                     loaded_count += 1
-            
+
             # Keep only max_entries
             if len(self.activity_entries) > self.max_entries:
-                self.activity_entries = self.activity_entries[-self.max_entries:]
-                
+                self.activity_entries = self.activity_entries[-self.max_entries :]
+
             logging.info(f"Loaded {loaded_count} entries from existing activity log file: {self.activity_log_file}")
-            
+
             # Refresh display to show loaded entries
             if loaded_count > 0:
                 self._refresh_display()
-            
+
         except Exception as e:
             logging.error(f"Error loading existing activity log: {e}")
 
@@ -231,16 +241,16 @@ class ActivityWindow(ctk.CTkToplevel):
         """Append a single entry to the activity log file with rotation."""
         if not self.activity_log_file:
             return
-        
+
         try:
             # Directory is automatically created by get_user_data_path system
             # Check if log rotation is needed
             self._rotate_log_if_needed()
-            
+
             # Append entry to file
-            with open(self.activity_log_file, 'a', encoding='utf-8') as f:
+            with open(self.activity_log_file, "a", encoding="utf-8") as f:
                 f.write(entry["message"] + "\n")
-                
+
         except Exception as e:
             logging.error(f"Error appending to activity log file: {e}")
 
@@ -248,33 +258,33 @@ class ActivityWindow(ctk.CTkToplevel):
         """Rotate log file if it exceeds 5MB. Keep only current and 1 backup."""
         if not self.activity_log_file or not os.path.exists(self.activity_log_file):
             return
-        
+
         try:
             # Check current file size
             file_size = os.path.getsize(self.activity_log_file)
             max_size = 5 * 1024 * 1024  # 5MB in bytes
-            
+
             if file_size >= max_size:
                 # Create backup filename
                 backup_file = self.activity_log_file + ".1"
-                
+
                 # Remove old backup if it exists (keep only 2 files total)
                 if os.path.exists(backup_file):
                     os.remove(backup_file)
                     logging.info(f"Removed old activity log backup: {backup_file}")
-                
+
                 # Move current file to backup
                 os.rename(self.activity_log_file, backup_file)
                 logging.info(f"Rotated activity log: {self.activity_log_file} -> {backup_file}")
-                
+
                 # Create new log file with header
-                with open(self.activity_log_file, 'w', encoding='utf-8') as f:
+                with open(self.activity_log_file, "w", encoding="utf-8") as f:
                     f.write(f"# BitCraft Companion Activity Log\n")
                     f.write(f"# Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
                     f.write(f"# Previous log rotated to: {os.path.basename(backup_file)}\n\n")
-                
+
                 logging.info(f"Created new activity log file: {self.activity_log_file}")
-                
+
         except Exception as e:
             logging.error(f"Error rotating activity log file: {e}")
 
@@ -283,21 +293,23 @@ class ActivityWindow(ctk.CTkToplevel):
         try:
             self.log_textbox.configure(state="normal")
             self.log_textbox.delete("1.0", "end")
-            
+
             if not self.activity_entries:
-                self.log_textbox.insert("end", "No recent activity.\n\nInventory changes will appear here automatically when detected.")
+                self.log_textbox.insert(
+                    "end", "No recent activity.\n\nInventory changes will appear here automatically when detected."
+                )
                 logging.debug("Activity window display refreshed - no entries to show")
             else:
                 # Show most recent entries first
                 for entry in reversed(self.activity_entries):
                     self.log_textbox.insert("end", entry["message"] + "\n")
                 logging.debug(f"Activity window display refreshed - showing {len(self.activity_entries)} entries")
-            
+
             self.log_textbox.configure(state="disabled")
-            
+
             # Scroll to top to show most recent
             self.log_textbox.see("1.0")
-            
+
         except Exception as e:
             logging.error(f"Error refreshing activity log display: {e}")
 
@@ -305,29 +317,29 @@ class ActivityWindow(ctk.CTkToplevel):
         """Clear all activity log entries and log files."""
         self.activity_entries = []
         self._refresh_display()
-        
+
         # Also clear the log files
         self._clear_log_files()
-        
+
         logging.info("Activity log and files cleared by user")
 
     def _clear_log_files(self):
         """Clear the activity log files."""
         if not self.activity_log_file:
             return
-        
+
         try:
             # Remove current log file
             if os.path.exists(self.activity_log_file):
                 os.remove(self.activity_log_file)
                 logging.info(f"Removed activity log file: {self.activity_log_file}")
-            
+
             # Remove backup log file
             backup_file = self.activity_log_file + ".1"
             if os.path.exists(backup_file):
                 os.remove(backup_file)
                 logging.info(f"Removed activity log backup: {backup_file}")
-                
+
         except Exception as e:
             logging.error(f"Error clearing activity log files: {e}")
 
@@ -340,3 +352,52 @@ class ActivityWindow(ctk.CTkToplevel):
         """Clear activity log when switching claims."""
         self.activity_entries = []
         self.add_general_activity("Switched to new claim - activity log cleared")
+
+    def _on_theme_changed(self, old_theme: str, new_theme: str):
+        """Handle theme change by updating colors."""
+        try:
+            # Update window background
+            self.configure(fg_color=get_color("BACKGROUND_PRIMARY"))
+            
+            # Update header frame
+            if hasattr(self, 'header_frame'):
+                self.header_frame.configure(fg_color="transparent")
+            
+            # Update controls frame  
+            if hasattr(self, 'controls_frame'):
+                self.controls_frame.configure(fg_color="transparent")
+            
+            # Update title label
+            if hasattr(self, 'title_label'):
+                self.title_label.configure(text_color=get_color("TEXT_PRIMARY"))
+            
+            # Update clear button
+            if hasattr(self, 'clear_button'):
+                self.clear_button.configure(
+                    fg_color=get_color("STATUS_ERROR"),
+                    hover_color=get_color("STATUS_ERROR"),
+                    text_color=get_color("TEXT_PRIMARY")
+                )
+            
+            # Update content frame
+            if hasattr(self, 'content_frame'):
+                self.content_frame.configure(
+                    fg_color=get_color("BACKGROUND_SECONDARY"),
+                    border_color=get_color("BORDER_DEFAULT")
+                )
+            
+            # Update text box
+            if hasattr(self, 'log_textbox'):
+                self.log_textbox.configure(
+                    fg_color=get_color("BACKGROUND_TERTIARY"),
+                    text_color=get_color("TEXT_PRIMARY"),
+                    border_color=get_color("BORDER_DEFAULT")
+                )
+            
+            # Force visual refresh
+            self.update_idletasks()
+                
+            logging.debug(f"Activity window theme changed from {old_theme} to {new_theme}")
+            
+        except Exception as e:
+            logging.error(f"Error updating activity window theme: {e}")
