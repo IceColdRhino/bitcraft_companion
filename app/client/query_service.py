@@ -124,12 +124,14 @@ class QueryService:
 
         reference_queries = [
             "SELECT * FROM resource_desc;",
+            "SELECT * FROM item_list_desc;",
             "SELECT * FROM item_desc;",
             "SELECT * FROM cargo_desc;",
             "SELECT * FROM building_desc;",
             "SELECT * FROM building_function_type_mapping_desc;",
             "SELECT * FROM building_type_desc;",
             "SELECT * FROM crafting_recipe_desc;",
+            "SELECT * FROM extraction_recipe_desc;",
             "SELECT * FROM claim_tile_cost;",
             "SELECT * FROM npc_desc;",
         ]
@@ -253,28 +255,28 @@ class QueryService:
                 "WHERE building_state.claim_entity_id = '{claim_id}';".format(claim_id=claim_id)
             ),
             # Get active crafting state for users in the claim
-            (
-                "SELECT progressive_action_state.* "
-                "FROM progressive_action_state "
-                "JOIN building_state "
-                "ON progressive_action_state.building_entity_id = building_state.entity_id "
-                "WHERE building_state.claim_entity_id = '{claim_id}';".format(claim_id=claim_id)
-            ),
+            # (
+            #     "SELECT progressive_action_state.* "
+            #     "FROM progressive_action_state "
+            #     "JOIN building_state "
+            #     "ON progressive_action_state.building_entity_id = building_state.entity_id "
+            #     "WHERE building_state.claim_entity_id = '{claim_id}';".format(claim_id=claim_id)
+            # ),
             # Get active crafting buildings in claim if accept help is turned on
-            (
-                "SELECT public_progressive_action_state.* "
-                "FROM public_progressive_action_state "
-                "JOIN building_state "
-                "ON public_progressive_action_state.building_entity_id = building_state.entity_id "
-                "WHERE building_state.claim_entity_id = '{claim_id}';".format(claim_id=claim_id)
-            ),
+            # (
+            #     "SELECT public_progressive_action_state.* "
+            #     "FROM public_progressive_action_state "
+            #     "JOIN building_state "
+            #     "ON public_progressive_action_state.building_entity_id = building_state.entity_id "
+            #     "WHERE building_state.claim_entity_id = '{claim_id}';".format(claim_id=claim_id)
+            # ),
             # Get passive crafting state for buildings in the claim
-            (
-                "SELECT passive_craft_state.* "
-                "FROM passive_craft_state "
-                "JOIN building_state ON passive_craft_state.building_entity_id = building_state.entity_id "
-                "WHERE building_state.claim_entity_id = '{claim_id}';".format(claim_id=claim_id)
-            ),
+            # (
+            #     "SELECT passive_craft_state.* "
+            #     "FROM passive_craft_state "
+            #     "JOIN building_state ON passive_craft_state.building_entity_id = building_state.entity_id "
+            #     "WHERE building_state.claim_entity_id = '{claim_id}';".format(claim_id=claim_id)
+            # ),
             # Get buy order state for orders placed within the claim
             (
                 "SELECT buy_order_state.* "

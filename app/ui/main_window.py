@@ -182,7 +182,8 @@ class MainWindow(ctk.CTk):
         logging.debug("Initializing tabs and UI components")
         self._create_tabs()
         self._create_tab_buttons()
-        self.show_tab("Claim Inventory")
+        #self.show_tab("Claim Inventory")
+        self.show_tab("Compare Jobs")
 
         # Ensure loading overlay is visible on top and lock tab buttons
         # Just show the overlay and set initial state
@@ -1506,87 +1507,92 @@ class MainWindow(ctk.CTk):
                 data_size = len(msg_data) if isinstance(msg_data, (dict, list)) else "unknown"
                 logging.debug(f"Processing message {message_count}: {msg_type} (data size: {data_size})")
 
-                if msg_type == "inventory_update":
-                    if "Claim Inventory" in self.tabs:
-                        start_time = time.time()
+                # if msg_type == "inventory_update":
+                #     if "Claim Inventory" in self.tabs:
+                #         start_time = time.time()
 
-                        # Log inventory data details for debugging
-                        data_size = len(msg_data) if isinstance(msg_data, dict) else "unknown"
-                        logging.debug(f"Processing inventory update: {data_size} items, loading state: {self.is_loading}")
+                #         # Log inventory data details for debugging
+                #         data_size = len(msg_data) if isinstance(msg_data, dict) else "unknown"
+                #         logging.debug(f"Processing inventory update: {data_size} items, loading state: {self.is_loading}")
 
-                        self.tabs["Claim Inventory"].update_data(msg_data)
-                        update_time = time.time() - start_time
-                        logging.debug(f"Inventory tab update took {update_time:.3f}s")
+                #         self.tabs["Claim Inventory"].update_data(msg_data)
+                #         update_time = time.time() - start_time
+                #         logging.debug(f"Inventory tab update took {update_time:.3f}s")
 
-                        # Track that we've received inventory data
-                        if self.is_loading:
-                            self.received_data_types.add("inventory")
-                            logging.debug(
-                                f"[LOADING STATE] Received inventory data - progress: {self.received_data_types}/{self.expected_data_types}"
-                            )
-                            self._check_all_data_loaded()
-                        else:
-                            logging.debug(f"Inventory update processed while not in loading state")
+                #         # Track that we've received inventory data
+                #         if self.is_loading:
+                #             self.received_data_types.add("inventory")
+                #             logging.debug(
+                #                 f"[LOADING STATE] Received inventory data - progress: {self.received_data_types}/{self.expected_data_types}"
+                #             )
+                #             self._check_all_data_loaded()
+                #         else:
+                #             logging.debug(f"Inventory update processed while not in loading state")
 
-                elif msg_type == "crafting_update":
-                    if "Passive Crafting" in self.tabs:
-                        start_time = time.time()
-                        self.tabs["Passive Crafting"].update_data(msg_data)
-                        update_time = time.time() - start_time
-                        logging.debug(f"Crafting tab update took {update_time:.3f}s")
+                # elif msg_type == "crafting_update":
+                #     if "Passive Crafting" in self.tabs:
+                #         start_time = time.time()
+                #         self.tabs["Passive Crafting"].update_data(msg_data)
+                #         update_time = time.time() - start_time
+                #         logging.debug(f"Crafting tab update took {update_time:.3f}s")
 
-                        # Check for completion celebrations
-                        changes = message.get("changes", {})
-                        if changes.get("crafting_completed"):
-                            self._celebrate_completions(changes["crafting_completed"])
+                #         # Check for completion celebrations
+                #         changes = message.get("changes", {})
+                #         if changes.get("crafting_completed"):
+                #             self._celebrate_completions(changes["crafting_completed"])
 
-                        # Track that we've received crafting data
-                        if self.is_loading:
-                            self.received_data_types.add("crafting")
-                            logging.debug(f"Received crafting data - progress: {self.received_data_types}")
-                            self._check_all_data_loaded()
+                #         # Track that we've received crafting data
+                #         if self.is_loading:
+                #             self.received_data_types.add("crafting")
+                #             logging.debug(f"Received crafting data - progress: {self.received_data_types}")
+                #             self._check_all_data_loaded()
 
-                elif msg_type == "active_crafting_update":
-                    if "Active Crafting" in self.tabs:
-                        start_time = time.time()
-                        self.tabs["Active Crafting"].update_data(msg_data)
-                        update_time = time.time() - start_time
-                        logging.debug(f"Active crafting tab update took {update_time:.3f}s")
+                # elif msg_type == "active_crafting_update":
+                #     if "Active Crafting" in self.tabs:
+                #         start_time = time.time()
+                #         self.tabs["Active Crafting"].update_data(msg_data)
+                #         update_time = time.time() - start_time
+                #         logging.debug(f"Active crafting tab update took {update_time:.3f}s")
 
-                        # Track that we've received active crafting data
-                        if self.is_loading:
-                            self.received_data_types.add("active_crafting")
-                            logging.debug(f"Received active crafting data - progress: {self.received_data_types}")
-                            self._check_all_data_loaded()
+                #         # Track that we've received active crafting data
+                #         if self.is_loading:
+                #             self.received_data_types.add("active_crafting")
+                #             logging.debug(f"Received active crafting data - progress: {self.received_data_types}")
+                #             self._check_all_data_loaded()
 
-                elif msg_type == "timer_update":
-                    if "Passive Crafting" in self.tabs:
-                        self.tabs["Passive Crafting"].update_data(msg_data)
+                # elif msg_type == "timer_update":
+                #     if "Passive Crafting" in self.tabs:
+                #         self.tabs["Passive Crafting"].update_data(msg_data)
 
-                elif msg_type == "crafting_timer_update":
-                    if "Passive Crafting" in self.tabs:
-                        # Lightweight timer update - only update time values
-                        self.tabs["Passive Crafting"].update_timer_only(msg_data or {})
+                # elif msg_type == "crafting_timer_update":
+                #     if "Passive Crafting" in self.tabs:
+                #         # Lightweight timer update - only update time values
+                #         self.tabs["Passive Crafting"].update_timer_only(msg_data or {})
 
-                elif msg_type == "tasks_update":
-                    logging.debug(
-                        f"MAIN WINDOW: Processing tasks_update with {len(msg_data) if isinstance(msg_data, list) else 'invalid'} items"
-                    )
-                    if "Traveler's Tasks" in self.tabs:
-                        self.tabs["Traveler's Tasks"].update_data(msg_data)
-                        # Check for task completions
-                        changes = message.get("changes", {})
-                        if changes.get("completed_tasks"):
-                            self._celebrate_task_completions(changes["completed_tasks"])
+                # elif msg_type == "tasks_update":
+                #     logging.debug(
+                #         f"MAIN WINDOW: Processing tasks_update with {len(msg_data) if isinstance(msg_data, list) else 'invalid'} items"
+                #     )
+                #     if "Traveler's Tasks" in self.tabs:
+                #         self.tabs["Traveler's Tasks"].update_data(msg_data)
+                #         # Check for task completions
+                #         changes = message.get("changes", {})
+                #         if changes.get("completed_tasks"):
+                #             self._celebrate_task_completions(changes["completed_tasks"])
 
-                        # Track that we've received tasks data
-                        if self.is_loading:
-                            self.received_data_types.add("tasks")
-                            self._check_all_data_loaded()
-                    else:
-                        logging.warning("MAIN WINDOW: Traveler's Tasks tab not found for tasks_update")
+                #         # Track that we've received tasks data
+                #         if self.is_loading:
+                #             self.received_data_types.add("tasks")
+                #             self._check_all_data_loaded()
+                #     else:
+                #         logging.warning("MAIN WINDOW: Traveler's Tasks tab not found for tasks_update")
 
-                elif msg_type == "compare_jobs_update":
+                self.received_data_types.add("inventory")
+                self.received_data_types.add("crafting")
+                self.received_data_types.add("active_crafting")
+                self.received_data_types.add("tasks")
+
+                if msg_type == "compare_jobs_update":
                     if "Compare Jobs" in self.tabs:
                         start_time = time.time()
                         self.tabs["Compare Jobs"].update_data(msg_data)

@@ -9,9 +9,9 @@ import json
 import logging
 from .base_processor import BaseProcessor
 from app.models import (
-    ResourceDesc, ItemDesc, CargoDesc, BuildingDesc, BuildingTypeDesc,
-    CraftingRecipeDesc, ExtractionRecipeDesc, ItemListDesc, ClaimTileCost,
-    NpcDesc, BuildingFunctionTypeMappingDesc
+    ResourceDesc, ItemListDesc, ItemDesc, CargoDesc, BuildingDesc,
+    BuildingTypeDesc, CraftingRecipeDesc, ExtractionRecipeDesc,
+    ClaimTileCost, NpcDesc, BuildingFunctionTypeMappingDesc
 )
 
 
@@ -35,13 +35,13 @@ class ReferenceDataProcessor(BaseProcessor):
         # Mapping of table names to dataclass types
         self._table_dataclass_map = {
             "resource_desc": ResourceDesc,
+            "item_list_desc": ItemListDesc,
             "item_desc": ItemDesc, 
             "cargo_desc": CargoDesc,
             "building_desc": BuildingDesc,
             "building_type_desc": BuildingTypeDesc,
             "crafting_recipe_desc": CraftingRecipeDesc,
             "extraction_recipe_desc": ExtractionRecipeDesc,
-            "item_list_desc": ItemListDesc,
             "claim_tile_cost": ClaimTileCost,
             "npc_desc": NpcDesc,
             "building_function_type_mapping_desc": BuildingFunctionTypeMappingDesc,

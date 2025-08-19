@@ -33,7 +33,6 @@ class ActiveCraftingTab(ctk.CTkFrame):
         self.search_parser = SearchParser()
         self.clicked_header = None
         
-
         self._create_widgets()
         self._create_context_menu()
 
