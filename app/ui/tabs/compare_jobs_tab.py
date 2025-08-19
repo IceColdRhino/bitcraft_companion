@@ -286,6 +286,7 @@ class CompareJobsTab(ctk.CTkFrame):
                             "effort":item_group.get("effort","Unknown"),
                             "use_hands": item_group.get("use_hands","Unknown"),
                             "passive": item_group.get("passive","Unknown"),
+                            "swing_speed": item_group.get("swing_speed","Unknown"),
                             "cost": item_group.get("cost","Unknown"),
                             "gross": item_group.get("gross","Unknown"),
                             "profit": item_group.get("profit","Unknown"),
@@ -313,6 +314,7 @@ class CompareJobsTab(ctk.CTkFrame):
                                 "effort": operation.get("effort", "Unknown"),
                                 "use_hands": operation.get("use_hands","Unknown"),
                                 "passive": operation.get("passive","Unknown"),
+                                "swing_speed": operation.get("swing_speed","Unknown"),
                                 "cost": operation.get("cost","Unknown"),
                                 "gross": operation.get("gross","Unknown"),
                                 "profit": operation.get("profit","Unknown"),
@@ -449,6 +451,7 @@ class CompareJobsTab(ctk.CTkFrame):
             effort = operation_data.get("effort","Unknown")
             hands = operation_data.get("use_hands","Unknown")
             passive = operation_data.get("passive","Unknown")
+            swing_speed = operation_data.get("swing_speed","Unknown")
             cost = np.round(operation_data.get("cost","Unknown"),2)
             gross = np.round(operation_data.get("gross","Unknown"),2)
             profit = np.round(operation_data.get("profit","Unknown"),2)
@@ -477,6 +480,7 @@ class CompareJobsTab(ctk.CTkFrame):
                 xp,
                 outputs,
                 hands,
+                swing_speed,
                 ]
 
             # Give tag to item id

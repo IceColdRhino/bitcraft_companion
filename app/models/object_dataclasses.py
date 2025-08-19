@@ -1290,9 +1290,137 @@ class PassiveCraftState:
 
         return {"timestamp_micros": None, "readable_time": None}
     
+
+@dataclass
+class CharacterStatState:
+    """
+    Data class for character_stat_state data from SpacetimeDB.
+    """
+    # TODO: I feel like there's got to be a more elegant way to do this
+
+    max_health: float
+    max_stamina: float
+    passive_health_regen_rate: float
+    passive_stamina_regen_rate: float
+    movement_multiplier: float
+    sprint_multiplier: float
+    sprint_stamina_drain: float
+    armor: float
+    cooldown_multiplier: float
+    hunting_weapon_power: float
+    strength: float
+    cold_protection: float
+    heat_protection: float
+    evasion: float
+    toolbelt_slots: float
+    crafting_speed: float
+    gathering_speed: float
+    building_speed: float
+    satiation_regen_rate: float
+    max_satiation: float
+    defense_level: float
+    forestry_speed: float
+    carpentry_speed: float
+    masonry_speed: float
+    mining_speed: float
+    smithing_speed: float
+    scholar_speed: float
+    leatherworking_speed: float
+    hunting_speed: float
+    tailoring_speed: float
+    farming_speed: float
+    fishing_speed: float
+    cooking_speed: float
+    foraging_speed: float
+    forestry_power: float
+    carpentry_power: float
+    masonry_power: float
+    mining_power: float
+    smithing_power: float
+    scholar_power: float
+    leatherworking_power: float
+    hunting_power: float
+    tailoring_power: float
+    farming_power: float
+    fishing_power: float
+    cooking_power: float
+    foraging_power: float
+    active_health_regen_rate: float
+    active_stamina_regen_rate: float
+    climb_proficiency: float
+    experience_rate: float
+    accuracy: float
+    max_teleportation_energy: float
+    teleportation_regen_rate: float
+
+    @classmethod
+    def from_list(cls, data: List) -> "CharacterStatState":
+        """Create CharacterStatState from list format."""
+        if not isinstance(data, List):
+            raise ValueError(f"Invalid character_stat_state format: expected List, got {type(data)}")
+
+        if len(data) != 54:
+            raise ValueError(f"Incorrect List length in character_stat_state data: expected 54, got {len(data)}")
+
+        return cls(
+            max_health=data[0],
+            max_stamina=data[1],
+            passive_health_regen_rate=data[2],
+            passive_stamina_regen_rate=data[3],
+            movement_multiplier=data[4],
+            sprint_multiplier=data[5],
+            sprint_stamina_drain=data[6],
+            armor=data[7],
+            cooldown_multiplier=data[8],
+            hunting_weapon_power=data[9],
+            strength=data[10],
+            cold_protection=data[11],
+            heat_protection=data[12],
+            evasion=data[13],
+            toolbelt_slots=data[14],
+            crafting_speed=data[15],
+            gathering_speed=data[16],
+            building_speed=data[17],
+            satiation_regen_rate=data[18],
+            max_satiation=data[19],
+            defense_level=data[20],
+            forestry_speed=data[21],
+            carpentry_speed=data[22],
+            masonry_speed=data[23],
+            mining_speed=data[24],
+            smithing_speed=data[25],
+            scholar_speed=data[26],
+            leatherworking_speed=data[27],
+            hunting_speed=data[28],
+            tailoring_speed=data[29],
+            farming_speed=data[30],
+            fishing_speed=data[31],
+            cooking_speed=data[32],
+            foraging_speed=data[33],
+            forestry_power=data[34],
+            carpentry_power=data[35],
+            masonry_power=data[36],
+            mining_power=data[37],
+            smithing_power=data[38],
+            scholar_power=data[39],
+            leatherworking_power=data[40],
+            hunting_power=data[41],
+            tailoring_power=data[42],
+            farming_power=data[43],
+            fishing_power=data[44],
+            cooking_power=data[45],
+            foraging_power=data[46],
+            active_health_regen_rate=data[47],
+            active_stamina_regen_rate=data[48],
+            climb_proficiency=data[49],
+            experience_rate=data[50],
+            accuracy=data[51],
+            max_teleportation_energy=data[52],
+            teleportation_regen_rate=data[53],
+        )
+
 @dataclass
 class MarketOrderState:
-    # Copy-pasted from ClaimState
     """
     Data class for buy_order_state and sell_order_state data from SpacetimeDB.
     """
@@ -1390,21 +1518,6 @@ class ResourceDesc:
         """Create ResourceDesc from subscription data."""
         if not isinstance(data, dict):
             raise ValueError(f"Invalid resource_desc format: expected dict, got {type(data)}")
-        
-        # Manually inject despawn times into specific resource ids,
-        # which for some reason incorrectly describe a time of 0.0
-        despawn_inject: Dict[int, float] = {
-            1110003: 0.25,
-            2110003: 0.25,
-            3110003: 0.25,
-            4110003: 0.25,
-            5110003: 0.25,
-            6110003: 0.25,
-            509854054: 0.25,
-            826362353: 0.25,
-            1006230316: 0.25,
-            1141184831: 0.25,
-        }
 
         return cls(
             id=data.get("id", 0),
@@ -1413,9 +1526,7 @@ class ResourceDesc:
             flattenable=data.get("flattenable", False),
             max_health=data.get("max_health", 0),
             ignore_damage=data.get("ignore_damage", False),
-            despawn_time = despawn_inject.get(
-                data.get("id", 0),
-                float(data.get("despawn_time", 0.0))),
+            despawn_time = data.get("despawn_time", 0.0),
             model_asset_name=data.get("model_asset_name", ""),
             icon_asset_name=data.get("icon_asset_name", ""),
             on_destroy_yield=data.get("on_destroy_yield", []),

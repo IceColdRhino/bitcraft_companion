@@ -14,6 +14,7 @@ from .object_dataclasses import (
     TravelerTaskState,
     InventoryState,
     PassiveCraftState,
+    CharacterStatState,
     MarketOrderState,
     # Reference data dataclasses
     ResourceDesc,
@@ -39,6 +40,7 @@ __all__ = [
     "TravelerTaskState",
     "InventoryState",
     "PassiveCraftState",
+    "CharacterStatState",
     "MarketOrderState",
     # Reference data dataclasses
     "ResourceDesc",

@@ -9,6 +9,7 @@ import logging
 import numpy as np
 from .base_processor import BaseProcessor
 from app.models import (
+    CharacterStatState,
     MarketOrderState,
     # Reference data dataclasses
     CraftingRecipeDesc,
@@ -144,10 +145,12 @@ class CompareJobsProcessor(BaseProcessor):
         # Look up Character State Type bindings to find meaning of "Values" field
         # Generally, there's good Speed info here but not good Power info
         try:
-            if not hasattr(self,"_character_stat_data"):
-                self._character_stat_data = {}
+            if not hasattr(self,"_character_stats"):
+                self._character_stats = {}
 
-            logging.info(f"TEMP - Character Stat Rows: {stat_rows}")
+            for row in stat_rows:
+                values = row.get("values",[])
+                self._character_stats = CharacterStatState.from_list(values)
         
         except Exception as e:
             logging.error(f"Error processing character stat data: {e}")
@@ -168,6 +171,9 @@ class CompareJobsProcessor(BaseProcessor):
     def _send_compare_jobs_update(self):
         """Send consolidated compare jobs update by combining all cached data."""
         try:
+            if not (hasattr(self, "_character_stats") and self._character_stats):
+                return
+            
             # Consolidate compare jobs by job
             consolidated_jobs = self._consolidate_compare_jobs()
 
@@ -192,8 +198,7 @@ class CompareJobsProcessor(BaseProcessor):
             raw_operations = []
 
             # Add crafting recipe info to list of raw_operations
-            # TODO: Get actual crafting speed value
-            craft_speed = 1.28
+            craft_speed = self._character_stats.__dict__["crafting_speed"]
             job_type = "Craft"
             crafting_recipes = self.reference_data.get("crafting_recipe_desc", [])
             for recipe in crafting_recipes:
@@ -213,9 +218,13 @@ class CompareJobsProcessor(BaseProcessor):
                 job_actions = recipe["actions_required"]
                 job_passive = recipe["is_passive"]
 
-                # TODO: Get actual skill speeds
-                # Temporary fallback value
-                skill_speed = 1.09
+                # TODO: Better skill/level handling
+                # I would like something more resilient than the simple assumption that
+                # the first skill in the list is the only skill in the list
+                job_level = self._level_convert(recipe["level_requirements"][0])
+
+                skill = job_level.split(':')[0].lower()
+                skill_speed = self._character_stats.__dict__.get(f"{skill}_speed",1.0)
 
                 combined_speed = (craft_speed - 1)+skill_speed
                 # swing_speed is in [seconds/swing], as in the game
@@ -252,11 +261,6 @@ class CompareJobsProcessor(BaseProcessor):
                 job_profit = job_gross - job_cost
                 job_pfm = 60*job_profit/job_time
 
-                # TODO: Better skill/level handling
-                # I would like something more resilient than the simple assumption that
-                # the first skill in the list is the only skill in the list
-                job_level = self._level_convert(recipe["level_requirements"][0])
-
                 job_building = recipe["building_requirement"]
                 job_tool = recipe["tool_requirements"]
                 job_xp = recipe["experience_per_progress"]
@@ -279,6 +283,7 @@ class CompareJobsProcessor(BaseProcessor):
                     "actions_required": job_actions,
                     "allow_use_hands": job_hands,
                     "is_passive": job_passive,
+                    "swing_speed": swing_speed,
                     "cost": job_cost,
                     "gross": job_gross,
                     "profit": job_profit,
@@ -287,8 +292,7 @@ class CompareJobsProcessor(BaseProcessor):
                 raw_operations.append(raw_operation)
 
             # Add extraction recipe info to list of raw_operations
-            # TODO: Get actual gathering speed value
-            gather_speed = 1.28
+            gather_speed = self._character_stats.__dict__["gathering_speed"]
             job_type = "Gather"
             extraction_recipes = self.reference_data.get("extraction_recipe_desc", [])
             for recipe in extraction_recipes:
@@ -303,11 +307,13 @@ class CompareJobsProcessor(BaseProcessor):
                 job_name = resource["name"]
                 long_name = f"{recipe["verb_phrase"]} {job_name}"
 
+                # TODO: Better skill/level handling
+                # I would like something more resilient than the simple assumption that
+                # the first skill in the list is the only skill in the list
                 job_level = self._level_convert(recipe["level_requirements"][0])
 
-                # TODO: Get actual skill speeds
-                # Temporary fallback value
-                skill_speed = 1.09
+                skill = job_level.split(':')[0].lower()
+                skill_speed = self._character_stats.__dict__.get(f"{skill}_speed",1.0)
 
                 # TODO: Get actual tool powers
                 # Temporary fallback value
@@ -321,6 +327,25 @@ class CompareJobsProcessor(BaseProcessor):
                 job_actions = resource["max_health"]
                 total_swings = int(np.ceil(job_actions/tool_power))
                 job_time = swing_speed*total_swings
+
+                # Manually inject despawn times into specific resource ids,
+                # which for some reason incorrectly describe a time of 0.0
+                # TODO: This previously lived in object_dataclasses ResourceDesc directly
+                # but that stopped working. It'd be better to have this live there so it's
+                # a single source of truth
+                despawn_inject = {
+                    1110003: 0.25,
+                    2110003: 0.25,
+                    3110003: 0.25,
+                    4110003: 0.25,
+                    5110003: 0.25,
+                    6110003: 0.25,
+                    509854054: 0.25,
+                    826362353: 0.25,
+                    1006230316: 0.25,
+                    1141184831: 0.25,
+                }
+                resource["despawn_time"] = despawn_inject.get(job_id,resource["despawn_time"])
 
                 # Handle nodes that only live for a limited amount of time
                 # (such as oceanfish nodes)
@@ -390,6 +415,7 @@ class CompareJobsProcessor(BaseProcessor):
                     "actions_required": job_actions,
                     "allow_use_hands": job_hands,
                     "is_passive": job_passive,
+                    "swing_speed": swing_speed,
                     "cost": job_cost,
                     "gross": job_gross,
                     "profit": job_profit,
@@ -418,6 +444,7 @@ class CompareJobsProcessor(BaseProcessor):
                 source["tool_durability_lost"] += target["tool_durability_lost"]
                 source["output_stacks"] = target["output_stacks"]
                 source["actions_required"] += target["actions_required"]
+                source["swing_speed"] = target["swing_speed"]
                 source["gross"] = target["gross"]
                 source["profit"] = source["gross"] - source["cost"]
                 source["profit_per_min"] = 60*source["profit"]/source["time_requirement"]
@@ -464,6 +491,7 @@ class CompareJobsProcessor(BaseProcessor):
                         "actions_required": op["actions_required"],
                         "allow_use_hands": op["allow_use_hands"],
                         "is_passive": op["is_passive"],
+                        "swing_speed": op["swing_speed"],
                         "cost": op["cost"],
                         "gross": op["gross"],
                         "profit": op["profit"],
@@ -509,6 +537,7 @@ class CompareJobsProcessor(BaseProcessor):
                     "effort": job_data["actions_required"],
                     "use_hands": job_data["allow_use_hands"],
                     "passive": job_data["is_passive"],
+                    "swing_speed": job_data["swing_speed"],
                     "cost": job_data["cost"],
                     "gross": job_data["gross"],
                     "profit": job_data["profit"],
