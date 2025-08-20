@@ -48,7 +48,7 @@ class CompareJobsProcessor(BaseProcessor):
 
     def process_transaction(self, table_update, reducer_name, timestamp):
         """
-        Handle progressive_action_state transactions - LIVE incremental updates.
+        Handle [x]_state transactions - LIVE incremental updates.
 
         Processes real-time compare jobs progress changes without full refresh.
         """
@@ -64,19 +64,45 @@ class CompareJobsProcessor(BaseProcessor):
                 deletes = update.get("deletes", [])
 
                 # TODO: Handle buy_order_state transactions
+                if table_name == "buy_order_state":
+                    ...
 
                 # TODO: Handle sell_order_state transactions
 
                 # TODO: Handle character_stats_state transactions
+                elif table_name == "character_stats_state":
+                    # Simply overwrite previous stat block
+                    for insert_str in inserts:
+                        data = json.loads(insert_str)
+                        if data:
+                            self._character_stats = CharacterStatState.from_list(data[1])
+                        has_compare_jobs_changes = True
 
                 # TODO: Handle toolbelt-specific inventory_state transactions
+
+                # For other table types, do full refresh if we have changes
+                elif inserts or deletes:
+                    self._log_transaction_debug("compare jobs", len(inserts), len(deletes), reducer_name)
+                    has_compare_jobs_changes = True
+
+            # Send incremental update if we have changes
+            if has_compare_jobs_changes:
+                logging.info(f"[CompareJobsProcessor] Detected job changes, sending update for table: {table_name}")
+                #if table_name == "inventory_state":
+                #    # Pass player context for accurate activity tracking
+                #    self._send_incremental_inventory_update(reducer_name, timestamp, player_context)
+                #else:
+                logging.debug(f"Sending full refresh for table: {table_name}")
+                self._refresh_jobs()
+            else:
+                logging.debug(f"[CompareJobsProcessor] No job changes detected for transaction")
 
         except Exception as e:
             logging.error(f"Error handling compare jobs transaction: {e}")
 
     def process_subscription(self, table_update):
         """
-        Handle progressive_action_state, building_state, building_nickname_state, and claim_member_state subscription updates.
+        Handle various subscription updates.
         Cache all data and combine them for consolidated compare jobs.
         """
         try:
@@ -110,6 +136,24 @@ class CompareJobsProcessor(BaseProcessor):
 
         except Exception as e:
             logging.error(f"Error handling compare jobs subscription: {e}")
+
+    def _refresh_jobs(self):
+        """
+        Process jobs data from subscription and send to UI.
+        Called from transaction updates.
+        """
+        try:
+            # For transaction updates, trigger a refresh if we have subscription data
+            #if hasattr(self, "_inventory_data") and self._inventory_data:
+            #    self._send_compare_jobs_update()
+            #else:
+            #    # Send empty data for transaction-only updates
+            #empty_jobs_data = {}
+            #self._queue_update("compare_jobs_update", empty_jobs_data, {"transaction_update": True})
+            self._send_compare_jobs_update()
+
+        except Exception as e:
+            logging.error(f"Error processing jobs from transaction: {e}")
 
     def _process_buy_order_data(self, buy_order_rows):
         """Process buy_order_state data to store buy order info"""
