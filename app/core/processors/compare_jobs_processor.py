@@ -418,6 +418,7 @@ class CompareJobsProcessor(BaseProcessor):
                 raw_operations.append(raw_operation)
 
             # Add extraction recipe info to list of raw_operations
+            blacklist = self._get_gather_blacklist()
             gather_speed = self._character_stats.__dict__["gathering_speed"]
             job_type = "Gather"
             extraction_recipes = self.reference_data.get("extraction_recipe_desc", [])
@@ -426,6 +427,9 @@ class CompareJobsProcessor(BaseProcessor):
                 # In the current state of the game, I only care about extractions from resources
                 # not extractions from cargos
                 if recipe["resource_id"]==0 or recipe["cargo_id"]!=0:
+                    continue
+
+                if job_id in blacklist:
                     continue
 
                 resource = self.item_lookup_service.lookup_item_by_id(recipe["resource_id"],"resource_desc")
@@ -1003,3 +1007,20 @@ class CompareJobsProcessor(BaseProcessor):
             min_sell = int(1e6)
         
         return (max_buy, min_sell)
+    
+    def _get_craft_blacklist(self):
+        """Returns a list of crafting recipe ids to omit from the table"""
+        blacklist = []
+        blacklist += [
+        ]
+        return blacklist
+
+    def _get_gather_blacklist(self):
+        """Returns a list of extraction recipe ids to omit from the table"""
+        blacklist = []
+        # Skill: Fishing
+        blacklist += [
+            # Net fishing for shells
+            1110004, 2110004, 3110004, 4110004, 5110004, 6110004,
+        ]
+        return blacklist
