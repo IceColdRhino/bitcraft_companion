@@ -1458,13 +1458,33 @@ class MarketOrderState:
             timestamp_micros=data["timestamp"]["__timestamp_micros_since_unix_epoch__"],
             stored_coins=data["stored_coins"],
         )
+    
+    @classmethod
+    def from_array(cls, data: List) -> "MarketOrderState":
+        """Create MarketOrderState from list of a know format."""
+        if not isinstance(data, List):
+            raise ValueError(f"Invalid market_order_state format: expected List, got {type(data)}")
+        
+        if len(data) != 9:
+            raise ValueError(f"Incorrect List length in character_stat_state data: expected 9, got {len(data)}")
+        
+        return cls(
+            entity_id=data[0],
+            owner_entity_id=data[1],
+            claim_entity_id=data[2],
+            item_id=data[3],
+            item_type=data[4],
+            price_threshold=data[5],
+            quantity=data[6],
+            timestamp_micros=data[7][0],
+            stored_coins=data[8],
+        )
 
     @classmethod
     def from_json_string(cls, json_str: str) -> "MarketOrderState":
         """Create MarketOrderState from JSON string."""
-        # TODO: I'm not 100% sure this works, given the weird timestamp format
         data = json.loads(json_str)
-        return cls.from_dict(data)
+        return cls.from_array(data)
 
     def to_dict(self) -> dict:
         """Convert to dictionary format for backward compatibility."""

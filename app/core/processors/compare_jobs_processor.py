@@ -65,17 +65,100 @@ class CompareJobsProcessor(BaseProcessor):
 
                 # TODO: Handle buy_order_state transactions
                 if table_name == "buy_order_state":
-                    ...
+                    # Initialize _buy_orders if it doesn't exist
+                    if not hasattr(self, "_buy_orders"):
+                        self._buy_orders = {}
+
+                    # Process inserts
+                    for insert_str in inserts:
+                        try:
+                            # Parse the insert data
+                            if isinstance(insert_str, str):
+                                insert_data = MarketOrderState.from_json_string(insert_str)
+                            
+                            # TODO: Maybe some more conditions/exceptions here?
+                            self._buy_orders[insert_data.entity_id] = insert_data
+                        except Exception as e:
+                            logging.error(f"Error processing buy order insert: {e}")
+
+                    # Process deletes
+                    for delete_str in deletes:
+                        try:
+                            # Parse the delete data
+                            if isinstance(delete_str, str):
+                                delete_data = json.loads(delete_str)
+                            else:
+                                delete_data = delete_str
+
+                            buy_order_entity_id = None
+                            if isinstance(delete_data,list) and len(delete_data)==9:
+                                buy_order_entity_id = delete_data[0]
+                            elif isinstance(delete_data,dict):
+                                buy_order_entity_id = delete_data.get("entity_id")
+                            else:
+                                logging.warning(f"Unexpected buy_order_state delete format: {delete_data}")
+                                continue
+
+                            if buy_order_entity_id and buy_order_entity_id in self._buy_orders:
+                                del self._buy_orders[buy_order_entity_id]
+                        except Exception as e:
+                            logging.error(f"Error processing buy order delete: {e}")
+
+                    if inserts or deletes:
+                        has_compare_jobs_changes = True
 
                 # TODO: Handle sell_order_state transactions
+                elif table_name == "sell_order_state":
+                    # Initialize _sell_orders if it doesn't exist
+                    if not hasattr(self, "_sell_orders"):
+                        self._sell_orders = {}
 
-                # TODO: Handle character_stats_state transactions
+                    # Process inserts
+                    for insert_str in inserts:
+                        try:
+                            # Parse the insert data
+                            if isinstance(insert_str, str):
+                                insert_data = MarketOrderState.from_json_string(insert_str)
+
+                            # TODO: Maybe some more conditions/exceptions here?
+                            self._sell_orders[insert_data.entity_id] = insert_data
+                        except Exception as e:
+                            logging.error(f"Error processing sell order insert: {e}")
+
+                    # Process deletes
+                    for delete_str in deletes:
+                        try:
+                            # Parse the delete data
+                            if isinstance(delete_str, str):
+                                delete_data = json.loads(delete_str)
+                            else:
+                                delete_data = delete_str
+
+                            sell_order_entity_id = None
+                            if isinstance(delete_data,list) and len(delete_data)==9:
+                                sell_order_entity_id = delete_data[0]
+                            elif isinstance(delete_data,dict):
+                                sell_order_entity_id = delete_data.get("entity_id")
+                            else:
+                                logging.warning(f"Unexpected sell_order_state delete format: {delete_data}")
+                                continue
+
+                            if sell_order_entity_id and sell_order_entity_id in self._sell_orders:
+                                del self._sell_orders[sell_order_entity_id]
+                        except Exception as e:
+                            logging.error(f"Error processing sell order delete: {e}")
+
+                    if inserts or deletes:
+                        has_compare_jobs_changes = True
+
+                # Handle character_stats_state transactions
                 elif table_name == "character_stats_state":
                     # Simply overwrite previous stat block
                     for insert_str in inserts:
                         data = json.loads(insert_str)
                         if data:
                             self._character_stats = CharacterStatState.from_list(data[1])
+                    if inserts or deletes:
                         has_compare_jobs_changes = True
 
                 # TODO: Handle toolbelt-specific inventory_state transactions
@@ -272,7 +355,7 @@ class CompareJobsProcessor(BaseProcessor):
 
                 # TODO: Get actual tool powers
                 # Temporary fallback value
-                tool_power = 10
+                tool_power = 27
                 skill_power = 0
                 total_power = tool_power + skill_power
 
@@ -360,7 +443,7 @@ class CompareJobsProcessor(BaseProcessor):
 
                 # TODO: Get actual tool powers
                 # Temporary fallback value
-                tool_power = 10
+                tool_power = 27
                 skill_power = 0
                 total_power = tool_power + skill_power
 
