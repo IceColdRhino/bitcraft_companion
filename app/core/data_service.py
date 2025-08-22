@@ -4,7 +4,16 @@ import threading
 import time
 
 from .message_router import MessageRouter
-from .processors import InventoryProcessor, CraftingProcessor, TasksProcessor, ClaimsProcessor, ActiveCraftingProcessor, CompareJobsProcessor, ReferenceDataProcessor
+from .processors import (
+    InventoryProcessor,
+    CraftingProcessor,
+    TasksProcessor,
+    ClaimsProcessor,
+    ActiveCraftingProcessor,
+    CompareJobsProcessor,
+    ReferenceDataProcessor,
+    StaminaProcessor,
+)
 from .utils import ItemLookupService
 from ..services.notification_service import NotificationService
 from ..services.claim_service import ClaimService
@@ -25,7 +34,7 @@ class DataService:
     def __init__(self):
         # Import BitCraft lazily to avoid circular dependency with core.__init__.py
         from ..client.bitcraft_client import BitCraft
-        
+
         # Instantiate the client immediately to load saved user data
         self.client = BitCraft()
 
@@ -54,9 +63,9 @@ class DataService:
         """Set the main app reference and initialize notification service."""
         self.main_app = main_app
         self.notification_service = NotificationService(main_app)
-        
+
         # Set up main thread scheduler for background processor if initialized
-        if self.background_processor and hasattr(main_app, 'after'):
+        if self.background_processor and hasattr(main_app, "after"):
             self.background_processor.set_main_thread_scheduler(main_app.after)
 
     def start(self, username, password, region, player_name):
@@ -257,8 +266,8 @@ class DataService:
             # Initialize claim manager and query service
             query_service = QueryService(self.client)
             self.claim_manager = ClaimService(self.client, query_service)
-            
-            # Load reference data via one-off queries 
+
+            # Load reference data via one-off queries
             ref_start = time.time()
             logging.debug("Loading reference data...")
             reference_data = query_service.get_reference_data()
@@ -330,9 +339,9 @@ class DataService:
             # Initialize background processor for heavy operations
             self.background_processor = BackgroundProcessor(max_workers=3)
             logging.info(f"[DataService] BackgroundProcessor initialized with 3 workers")
-            
+
             # Set up main thread scheduler if main app is available
-            if self.main_app and hasattr(self.main_app, 'after'):
+            if self.main_app and hasattr(self.main_app, "after"):
                 self.background_processor.set_main_thread_scheduler(self.main_app.after)
 
             # Initialize shared utilities
@@ -357,6 +366,7 @@ class DataService:
                 ActiveCraftingProcessor(self.data_queue, services, reference_data),
                 CompareJobsProcessor(self.data_queue, services, reference_data),
                 ReferenceDataProcessor(self.data_queue, services, reference_data),
+                StaminaProcessor(self.data_queue, services, reference_data),
             ]
 
             self.message_router = MessageRouter(self.processors, self.data_queue)
@@ -612,52 +622,52 @@ class DataService:
     def refresh_all_data(self):
         """
         Comprehensive data refresh including both reference data and current claim data.
-        
+
         Returns:
             bool: True if refresh succeeded, False otherwise
         """
         try:
             logging.info("[DataService] Starting comprehensive data refresh...")
-            
+
             # Stop active subscriptions to free the WebSocket for one-off queries
             logging.info("[DataService] Stopping subscriptions for reference data refresh...")
             if self.client:
                 self.client.stop_subscriptions()
-            
+
             # Refresh reference data while WebSocket is free
-            query_service = QueryService(self.client) 
+            query_service = QueryService(self.client)
             logging.info("[DataService] Refreshing reference data...")
             reference_data = query_service.get_reference_data()
-            
+
             # Update reference data in all processors
             for processor in self.processors:
                 processor.reference_data = reference_data
-                
+
             # Update ItemLookupService with fresh reference data
             item_lookup_service = None
             for processor in self.processors:
-                if hasattr(processor, 'services') and processor.services:
+                if hasattr(processor, "services") and processor.services:
                     item_lookup_service = processor.services.get("item_lookup_service")
                     if item_lookup_service:
                         break
-                    
+
             if item_lookup_service:
                 item_lookup_service.refresh_lookups(reference_data)
                 logging.info("[DataService] ItemLookupService refreshed with new reference data")
-                
+
             logging.info("[DataService] Reference data refresh completed")
-            
+
             # Refresh current claim data (restart subscriptions)
             logging.info("[DataService] Refreshing current claim data...")
             claim_success = self.refresh_current_claim_data()
-            
+
             if claim_success:
                 logging.info("[DataService] Comprehensive data refresh completed successfully")
                 return True
             else:
                 logging.warning("[DataService] Claim data refresh failed during comprehensive refresh")
                 return False
-                
+
         except Exception as e:
             logging.error(f"[DataService] Error during comprehensive data refresh: {e}")
             return False

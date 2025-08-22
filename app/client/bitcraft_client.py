@@ -169,14 +169,14 @@ class BitCraft:
                 logging.error(f"Unexpected error processing WebSocket message: {e}")
                 return
 
-        logging.warning(f"Query timeout after {timeout_seconds}s for message_id: {message_id} - server may be slow or unresponsive")
+        logging.warning(f"Timeout after {timeout_seconds}s for message_id: {message_id} - server may be slow or unresponsive")
 
     def _get_credential_from_keyring(self, key_name: str) -> str | None:
         try:
             credential = keyring.get_password(self.SERVICE_NAME, key_name)
             return credential
         except keyring.errors.NoKeyringError:
-            logging.warning("No keyring backend found - credentials will not be securely stored. Consider installing a keyring backend.")
+            logging.warning("No keyring backend found - credentials will not be securely stored.")
             return None
         except Exception as e:
             logging.error(f"Error retrieving '{key_name}' from keyring: {e}")
@@ -265,7 +265,7 @@ class BitCraft:
                 if user_id:
                     return user_id
 
-            logging.warning(f"Query for username '{username}' returned no results - user may not exist or database may be out of sync")
+            logging.warning(f"Query for username '{username}' returned no results - user may not exist.")
             return None
         except Exception as e:
             logging.error(f"An unexpected error occurred in fetch_user_id_by_username: {e}")
@@ -625,7 +625,6 @@ class BitCraft:
                     # Use a timeout to allow the loop to check the stop event
                     msg = self.ws_connection.recv(timeout=100.0)
                     data = json.loads(msg)
-
                     # Call the DataService callback with the message
                     callback(data)
                 except TimeoutError:

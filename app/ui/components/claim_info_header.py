@@ -41,6 +41,7 @@ class ClaimInfoHeader(ctk.CTkFrame):
         self.time_remaining = "Calculating..."
         self.traveler_tasks_expiration = None
         self.task_refresh_time = "Unknown"
+        self.player_activity_status = "Unknown"
         self._is_initial_loading = True  # Track if we're in initial loading phase
 
         self.reference_data = reference_data
@@ -245,11 +246,16 @@ class ClaimInfoHeader(ctk.CTkFrame):
 
         # Task Refresh with icon
         task_refresh_frame = self._create_enhanced_info_item(info_frame, "🔄 Task Refresh", "Unknown", get_color("STATUS_INFO"))
-        task_refresh_frame.grid(row=0, column=3)
+        task_refresh_frame.grid(row=0, column=3, padx=(0, 20))
         self.task_refresh_label = task_refresh_frame.winfo_children()[1]
 
         # Add tooltip to task refresh label
         self._add_tooltip(self.task_refresh_label, "Time until traveler tasks refresh with new assignments.")
+
+        # Player Activity Status with icon
+        activity_status_frame = self._create_enhanced_info_item(info_frame, "🏃 Activity", "Unknown", get_color("STATUS_INFO"))
+        activity_status_frame.grid(row=0, column=4)
+        self.activity_status_label = activity_status_frame.winfo_children()[1]
 
     def _create_enhanced_info_item(self, parent, label_text, value_text, color):
         """Creates an enhanced label-value pair with better styling."""
@@ -379,6 +385,43 @@ class ClaimInfoHeader(ctk.CTkFrame):
 
         except Exception as e:
             logging.error(f"Error updating claim data in header: {e}")
+
+    def update_player_activity_status(self, activity_data):
+        """
+        Updates the player activity status display.
+
+        Args:
+            activity_data: Dict containing activity status information
+        """
+        try:
+            status = activity_data.get("status", "Unknown")
+            stamina_percentage = activity_data.get("stamina_percentage", 0.0)
+
+            # Update stored status
+            self.player_activity_status = status
+
+            # Choose color based on activity status
+            status_colors = {
+                "Active": "#FF9800",  # Orange - player is performing actions
+                "Resting": "#FFC107",  # Amber - stamina recovering
+                "Idle": "#4CAF50",  # Green - at full stamina
+                "Unknown": "#9E9E9E",  # Gray - status unknown
+            }
+
+            color = status_colors.get(status, "#9E9E9E")
+
+            # Update the display label
+            display_text = f"{status}"
+            if status in ["Active", "Resting"] and stamina_percentage > 0:
+                display_text += f" ({stamina_percentage:.0f}%)"
+
+            self.activity_status_label.configure(text=display_text, text_color=color)
+
+            logging.debug(f"[ClaimInfoHeader] Updated activity status: {status} ({stamina_percentage:.1f}%)")
+
+        except Exception as e:
+            logging.error(f"Error updating player activity status: {e}")
+            self.activity_status_label.configure(text="Error", text_color="#f44336")
 
     def _update_supplies_runout(self):
         """Calculates and updates the time until supplies run out based on tile count."""

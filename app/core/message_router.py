@@ -8,14 +8,30 @@ to the appropriate data processors based on table names.
 import json
 import logging
 from app.models import (
-    InventoryState, PassiveCraftState, ProgressiveActionState,
-    TravelerTaskState, ClaimLocalState, ClaimState, ClaimMemberState,
-    BuildingState, PublicProgressiveActionState, CharacterStatState,
+    InventoryState,
+    PassiveCraftState,
+    ProgressiveActionState,
+    TravelerTaskState,
+    ClaimLocalState,
+    ClaimState,
+    ClaimMemberState,
+    BuildingState,
+    PublicProgressiveActionState,
     MarketOrderState,
+    StaminaState,
+    CharacterStatsState,
     # Reference data dataclasses
-    ResourceDesc, ItemDesc, CargoDesc, BuildingDesc, BuildingTypeDesc,
-    CraftingRecipeDesc, ExtractionRecipeDesc, ItemListDesc, ClaimTileCost,
-    NpcDesc, BuildingFunctionTypeMappingDesc
+    ResourceDesc,
+    ItemDesc,
+    ItemListDesc,
+    CargoDesc,
+    BuildingDesc,
+    BuildingTypeDesc,
+    CraftingRecipeDesc,
+    ExtractionRecipeDesc,
+    ClaimTileCost,
+    NpcDesc,
+    BuildingFunctionTypeMappingDesc,
 )
 
 
@@ -56,8 +72,9 @@ class MessageRouter:
             "claim_member_state": ClaimMemberState,
             "building_state": BuildingState,
             "public_progressive_action_state": PublicProgressiveActionState,
-            "character_stat_state": CharacterStatState,
             "market_order_state": MarketOrderState,
+            "stamina_state": StaminaState,
+            "character_stats_state": CharacterStatsState,
             # Reference data tables
             "resource_desc": ResourceDesc,
             "item_list_desc": ItemListDesc,
@@ -166,7 +183,7 @@ class MessageRouter:
                 processors = self.table_to_processors.get(table_name, [])
                 if not processors and table_name:
                     logging.warning(f"No processors found for subscription table '{table_name}' - data will not be processed")
-                
+
                 for processor in processors:
                     if processor not in processor_updates:
                         processor_updates[processor] = []
@@ -178,6 +195,19 @@ class MessageRouter:
                     for update in updates:
                         # Validate subscription data if we have a dataclass for this table
                         table_name = update.get("table_name", "")
+
+                        # Log stamina data for debugging
+                        if table_name in ["stamina_state", "character_stats_state"]:
+                            updates_list = update.get("updates", [])
+                            total_inserts = sum(len(u.get("inserts", [])) for u in updates_list)
+                            logging.info(f"[MessageRouter] {table_name} table has {total_inserts} insert records")
+                            if total_inserts > 0 and updates_list:
+                                first_insert = updates_list[0].get("inserts", [])[0] if updates_list[0].get("inserts") else None
+                                if first_insert:
+                                    logging.info(f"[MessageRouter] Raw {table_name} data sample: {first_insert}")
+                            else:
+                                logging.info(f"[MessageRouter] {table_name} table is empty")
+
                         self._validate_table_data(table_name, update, "subscription")
 
                         # Pass is_initial context to processors that support it
@@ -226,7 +256,7 @@ class MessageRouter:
     def _validate_table_data(self, table_name, table_update, update_type):
         """
         Validate table data using appropriate dataclass if available.
-        
+
         Args:
             table_name: Name of the table being updated
             table_update: The table update data
@@ -242,52 +272,65 @@ class MessageRouter:
                 self.validation_stats["table_validation_counts"][table_name] = {"success": 0, "error": 0}
 
             # Extract sample data for validation
-            updates = table_update.get("updates", [])
             validation_samples = 0
             validation_errors = 0
 
-            for update in updates:
-                inserts = update.get("inserts", [])
-                
-                # Validate a sample of inserts (limit to avoid performance impact)
-                for i, insert_str in enumerate(inserts[:5]):  # Only validate first 5 records
-                    try:
-                        if isinstance(insert_str, str):
-                            data = json.loads(insert_str)
-                        else:
-                            data = insert_str
+            if update_type == "subscription":
+                # For subscription data, validate table_rows directly
+                table_rows = table_update.get("table_rows", [])
+                validation_data = table_rows[:5]  # Only validate first 5 records
+            else:
+                # For transaction data, look in updates -> inserts
+                updates = table_update.get("updates", [])
+                validation_data = []
+                for update in updates:
+                    inserts = update.get("inserts", [])
+                    validation_data.extend(inserts[:5])  # Only validate first 5 records
+                validation_data = validation_data[:5]  # Limit to 5 total
 
-                        # Try to create dataclass instance for validation
-                        if update_type == "subscription":
-                            # Subscription data is usually in dict format
-                            if isinstance(data, dict):
-                                dataclass_type.from_dict(data)
-                            else:
-                                # Check if from_array method exists
-                                if hasattr(dataclass_type, 'from_array'):
-                                    dataclass_type.from_array(data)
-                                else:
-                                    # Skip validation for classes without from_array
-                                    continue
+            for i, data_item in enumerate(validation_data):
+                try:
+                    if isinstance(data_item, str):
+                        data = json.loads(data_item)
+                    else:
+                        data = data_item
+
+                    # Try to create dataclass instance for validation
+                    if update_type == "subscription":
+                        # Subscription data is usually in dict format
+                        if isinstance(data, dict):
+                            dataclass_type.from_dict(data)
                         else:
-                            # Transaction data is usually in array format  
-                            if isinstance(data, list):
-                                # Check if from_array method exists
-                                if hasattr(dataclass_type, 'from_array'):
-                                    dataclass_type.from_array(data)
-                                else:
-                                    # Skip validation for classes without from_array
-                                    continue
+                            # Check if from_array method exists
+                            if hasattr(dataclass_type, "from_array"):
+                                dataclass_type.from_array(data)
                             else:
-                                dataclass_type.from_dict(data)
-                        
-                        validation_samples += 1
-                        
-                    except Exception as validation_error:
-                        validation_errors += 1
-                        if validation_errors <= 2:  # Only log first few errors per batch
-                            logging.warning(f"Dataclass validation failed for {table_name}, data may be inconsistent: {validation_error}")
-                            logging.debug(f"Dataclass validation warning for {table_name}: {validation_error}")
+                                # Skip validation for classes without from_array
+                                continue
+                    else:
+                        # Transaction data is usually in array format
+                        if isinstance(data, list):
+                            # Check if from_array method exists
+                            if hasattr(dataclass_type, "from_array"):
+                                dataclass_type.from_array(data)
+                            else:
+                                # Skip validation for classes without from_array
+                                continue
+                        else:
+                            dataclass_type.from_dict(data)
+
+                    validation_samples += 1
+
+                except Exception as validation_error:
+                    validation_errors += 1
+                    if validation_errors <= 2:  # Only log first few errors per batch
+                        logging.warning(
+                            f"Dataclass validation failed for {table_name}, data may be inconsistent: {validation_error}"
+                        )
+                        logging.debug(f"Dataclass validation warning for {table_name}: {validation_error}")
+                        # Log the problematic data for debugging
+                        if table_name in ["stamina_state", "character_stats_state"]:
+                            logging.warning(f"[Validation] Problematic {table_name} data: {data}")
 
             # Update statistics
             if validation_errors == 0 and validation_samples > 0:
@@ -296,14 +339,14 @@ class MessageRouter:
             elif validation_errors > 0:
                 self.validation_stats["validation_errors"] += 1
                 self.validation_stats["table_validation_counts"][table_name]["error"] += 1
-                
+
         except Exception as e:
             logging.debug(f"Error in dataclass validation for {table_name}: {e}")
 
     def _log_processor_error(self, processor, table_name, operation_type, error):
         """
         Enhanced error logging for processor operations.
-        
+
         Args:
             processor: The processor that encountered the error
             table_name: Name of the table being processed
@@ -318,9 +361,9 @@ class MessageRouter:
                 "error_type": type(error).__name__,
                 "error_message": str(error),
             }
-            
+
             logging.error(f"Processor error context: {error_context}")
-            
+
         except Exception as log_error:
             logging.error(f"Error logging processor error context: {log_error}")
 
@@ -330,20 +373,21 @@ class MessageRouter:
         """
         try:
             if self.validation_stats["total_validations"] > 0:
-                success_rate = (self.validation_stats["successful_validations"] / 
-                               self.validation_stats["total_validations"]) * 100
-                
+                success_rate = (
+                    self.validation_stats["successful_validations"] / self.validation_stats["total_validations"]
+                ) * 100
+
                 logging.info(
                     f"Dataclass validation stats: {self.validation_stats['successful_validations']}/"
                     f"{self.validation_stats['total_validations']} successful ({success_rate:.1f}%)"
                 )
-                
+
                 # Log per-table stats if there are errors
                 if self.validation_stats["validation_errors"] > 0:
                     for table_name, counts in self.validation_stats["table_validation_counts"].items():
                         if counts["error"] > 0:
                             logging.debug(f"Table {table_name}: {counts['success']} success, {counts['error']} errors")
-                            
+
         except Exception as e:
             logging.debug(f"Error logging validation stats: {e}")
 
@@ -362,7 +406,7 @@ class MessageRouter:
     def get_validation_stats(self):
         """
         Get current validation statistics for monitoring.
-        
+
         Returns:
             dict: Current validation statistics
         """

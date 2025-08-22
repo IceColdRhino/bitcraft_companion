@@ -146,7 +146,7 @@ class QueryService:
 
                 logging.info(f"Loading reference data: {table_name}")
                 query_start = time.time()
-                
+
                 try:
                     results = self.client.query(query)
                     query_time = time.time() - query_start
@@ -156,14 +156,14 @@ class QueryService:
                     record_count = len(reference_data[table_name])
                     total_records += record_count
                     logging.debug(f"Loaded {record_count} records from {table_name} ({query_time:.3f}s)")
-                    
+
                     # Special logging for traveler_task_desc
                     if table_name == "traveler_task_desc":
                         if record_count == 0:
-                            logging.warning(f"[QueryService] traveler_task_desc table is empty - this will cause task display issues")
+                            logging.warning(f"[QueryService] traveler_task_desc table is empty")
                         else:
                             logging.info(f"[QueryService] Successfully loaded {record_count} traveler task descriptions")
-                
+
                 except Exception as e:
                     logging.error(f"[QueryService] Error loading {table_name}: {e}")
                     reference_data[table_name] = []  # Ensure the table exists even if empty
@@ -217,6 +217,10 @@ class QueryService:
             ("SELECT * FROM building_state WHERE claim_entity_id = '{claim_id}';".format(claim_id=claim_id)),
             # Get claim members' information
             ("SELECT * FROM claim_member_state WHERE claim_entity_id = '{claim_id}';".format(claim_id=claim_id)),
+            # Get player's stamina state
+            ("SELECT * FROM stamina_state WHERE entity_id = '{user_id}';".format(user_id=user_id)),
+            # Get player's stats
+            ("SELECT * FROM character_stats_state WHERE entity_id = '{user_id}';".format(user_id=user_id)),
             # Get player's claim information
             (
                 "SELECT claim_state.* "

@@ -5,12 +5,13 @@ import customtkinter as ctk
 from tkinter import Menu, ttk
 
 from app.ui.components.filter_popup import FilterPopup
+from app.ui.components.optimized_table_mixin import OptimizedTableMixin
 from app.ui.styles import TreeviewStyles
 from app.ui.themes import get_color, register_theme_callback
 from app.services.search_parser import SearchParser
 
 
-class TravelerTasksTab(ctk.CTkFrame):
+class TravelerTasksTab(ctk.CTkFrame, OptimizedTableMixin):
     """The tab for displaying traveler tasks with expandable traveler groups."""
 
     def __init__(self, master, app):
@@ -39,6 +40,9 @@ class TravelerTasksTab(ctk.CTkFrame):
 
         self._create_widgets()
         self._create_context_menu()
+        
+        # Initialize optimization features after UI is created
+        self.__init_optimization__(max_workers=2, max_cache_size_mb=60)
 
     def _create_widgets(self):
         """Creates the styled Treeview and its scrollbars."""
@@ -269,9 +273,61 @@ class TravelerTasksTab(ctk.CTkFrame):
             self.apply_filter()
 
     def update_data(self, new_data):
-        """Receives new tasks data and processes it for the new column structure."""
+        """Receives new tasks data and processes it with optimization."""
+        self._debounce_operation("data_update", self._process_data_update, new_data)
+
+    def _process_data_update(self, new_data):
+        """Process traveler tasks data update with background processing for large datasets."""
+        try:
+            data_size = len(new_data) if new_data else 0
+            logging.debug(f"[TravelerTasksTab] Updating data - {data_size} traveler groups")
+
+            # Use background processing for large datasets
+            if isinstance(new_data, list) and len(new_data) > 20:
+                self._submit_background_task(
+                    "traveler_tasks_processing",
+                    self._process_traveler_data_background,
+                    self._on_traveler_processing_complete,
+                    self._on_traveler_processing_error,
+                    priority=2,
+                    new_data=new_data[:]
+                )
+            else:
+                # Synchronous processing for small datasets
+                self._process_traveler_data_sync(new_data)
+
+        except Exception as e:
+            logging.error(f"[TravelerTasksTab] Error updating data: {e}")
+
+    def _process_traveler_data_background(self, new_data):
+        """Background processing for traveler tasks data."""
         if isinstance(new_data, list):
-            # Process the data to split required items into separate columns including tier
+            processed_data = self._process_tasks_for_split_columns(new_data)
+            return {"processed_data": processed_data}
+        else:
+            return {"processed_data": []}
+
+    def _on_traveler_processing_complete(self, result):
+        """Callback when background traveler tasks processing completes."""
+        try:
+            processed_data = result["processed_data"]
+            self.all_data = processed_data
+            logging.info(f"[TravelerTasksTab] Background processing completed - {len(processed_data)} traveler groups")
+            
+            self.apply_filter()
+                
+        except Exception as e:
+            logging.error(f"Error handling background traveler tasks processing result: {e}")
+
+    def _on_traveler_processing_error(self, error):
+        """Callback when background traveler tasks processing fails."""
+        logging.error(f"Background traveler tasks processing failed: {error}")
+        # Fallback to synchronous processing
+        self._process_traveler_data_sync(self._last_raw_data if hasattr(self, '_last_raw_data') else [])
+
+    def _process_traveler_data_sync(self, new_data):
+        """Synchronous processing for traveler tasks data."""
+        if isinstance(new_data, list):
             processed_data = self._process_tasks_for_split_columns(new_data)
             self.all_data = processed_data
         else:
@@ -682,56 +738,37 @@ class TravelerTasksTab(ctk.CTkFrame):
             self.tree.heading(header, text=text + filter_indicator)
 
     def render_table(self):
-        """Renders the traveler tasks data with expandable traveler groups, PRESERVING expansion state."""
-        # Save current expansion state before clearing
-        self._save_current_expansion_state()
+        """Renders table with optimization support for large datasets."""
+        try:
+            logging.debug(f"[TravelerTasksTab] Starting table render - {len(self.filtered_data)} traveler groups")
 
+            # Save current expansion state before clearing
+            self._save_current_expansion_state()
+
+            # Use lazy loading for large datasets
+            if len(self.filtered_data) > self._lazy_load_threshold:
+                self._render_lazy_loading(self.filtered_data)
+            else:
+                # Direct rendering for smaller datasets
+                self._render_direct(self.filtered_data)
+
+            # Mark that we've had our first load
+            if not self.has_had_first_load:
+                self.has_had_first_load = True
+
+            logging.debug(f"[TravelerTasksTab] Table render complete")
+
+        except Exception as e:
+            logging.error(f"[TravelerTasksTab] Critical error during table render: {e}")
+
+    def _render_direct(self, data):
+        """Direct rendering for smaller datasets."""
         # Clear the tree
         self.tree.delete(*self.tree.get_children())
+        self._ui_item_cache.clear()
 
-        for row_data in self.filtered_data:
-            traveler_name = row_data.get("traveler", "Unknown Traveler")
-            completed_summary = row_data.get("completed", "")
-            completion_status = row_data.get("status", "❌")
-            operations = row_data.get("operations", [])
-            is_expandable = row_data.get("is_expandable", False)
-            traveler_id = row_data.get("traveler_id", "")
-
-            # Create a stable identifier for expansion tracking
-            expansion_key = f"traveler_{traveler_id}_{traveler_name}"
-
-            # UPDATED: Prepare main row values for new column structure
-            # Include completion status in the Item column for parent rows
-            item_with_completion = f"Tasks ({completed_summary} completed)"
-            values = [traveler_name, item_with_completion, "", "", "", completion_status]
-
-            # Determine tag based on completion status
-            if completion_status == "✅":
-                tag = "completed"
-            else:
-                tag = "incomplete"
-
-            if is_expandable and operations:
-                # Create expandable parent row
-                parent_id = self.tree.insert("", "end", values=values, tags=(tag,))
-
-                # Check if this traveler should be expanded based on saved state
-                should_expand = expansion_key in self.expansion_state
-
-                # Add individual tasks as children
-                for task_data in operations:
-                    self._render_task_row(parent_id, task_data)
-
-                # Apply expansion state
-                if should_expand:
-                    self.tree.item(parent_id, open=True)
-            else:
-                # Non-expandable row
-                self.tree.insert("", "end", values=values, tags=(tag,))
-
-        # Mark that we've had our first load
-        if not self.has_had_first_load:
-            self.has_had_first_load = True
+        for row_data in data:
+            self._insert_tree_item(row_data)
 
     def _save_current_expansion_state(self):
         """Save the current expansion state of traveler groups."""
@@ -781,3 +818,69 @@ class TravelerTasksTab(ctk.CTkFrame):
 
         # Insert the child row
         self.tree.insert(parent_id, "end", values=child_values, tags=child_tag)
+
+    def destroy(self):
+        """Clean up resources when tab is destroyed."""
+        try:
+            self.optimization_shutdown()
+        except Exception as e:
+            logging.error(f"Error during optimization shutdown: {e}")
+        super().destroy()
+
+    def _get_comparison_fields(self) -> List[str]:
+        """Get fields to compare for change detection."""
+        return ["traveler", "completed", "item", "quantity", "tier", "tag", "status", "traveler_id"]
+
+    def _generate_item_key(self, item_data):
+        """Generate unique key for traveler task items."""
+        key_tuple = (
+            item_data.get("traveler", "Unknown"),
+            item_data.get("traveler_id", ""),
+            item_data.get("completed", ""),
+        )
+        if key_tuple not in self._memory_manager["item_pool"]:
+            self._memory_manager["item_pool"][key_tuple] = "|".join(str(x) for x in key_tuple)
+        return self._memory_manager["item_pool"][key_tuple]
+
+    def _insert_tree_item(self, item_data):
+        """Insert traveler task item into tree."""
+        traveler_name = item_data.get("traveler", "Unknown Traveler")
+        completed_summary = item_data.get("completed", "")
+        completion_status = item_data.get("status", "❌")
+        operations = item_data.get("operations", [])
+        is_expandable = item_data.get("is_expandable", False)
+        traveler_id = item_data.get("traveler_id", "")
+
+        # Create a stable identifier for expansion tracking
+        expansion_key = f"traveler_{traveler_id}_{traveler_name}"
+
+        # Prepare main row values for new column structure
+        item_with_completion = f"Tasks ({completed_summary} completed)"
+        values = [traveler_name, item_with_completion, "", "", "", completion_status]
+
+        # Determine tag based on completion status
+        if completion_status == "✅":
+            tag = "completed"
+        else:
+            tag = "incomplete"
+
+        if is_expandable and operations:
+            # Create expandable parent row
+            parent_id = self.tree.insert("", "end", values=values, tags=(tag,))
+
+            # Check if this traveler should be expanded based on saved state
+            should_expand = expansion_key in self.expansion_state
+
+            # Add individual tasks as children
+            for task_data in operations:
+                self._render_task_row(parent_id, task_data)
+
+            # Apply expansion state
+            if should_expand:
+                self.tree.item(parent_id, open=True)
+        else:
+            # Non-expandable row
+            parent_id = self.tree.insert("", "end", values=values, tags=(tag,))
+
+        item_key = self._generate_item_key(item_data)
+        self._ui_item_cache[item_key] = parent_id

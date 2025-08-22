@@ -42,7 +42,7 @@ class CraftingProcessor(BaseProcessor):
 
         # Track items that have already been notified as ready to prevent duplicates
         self.notified_ready_items = set()
-        
+
         # Sticky child group cache - prevents child row flickering
         # Key: f"{item_name}|{crafter}", Value: Dict of stable child groups
         self._child_groups_cache = {}
@@ -115,12 +115,16 @@ class CraftingProcessor(BaseProcessor):
                             # This is an update (delete+insert)
                             recipe_id = insert_data.get("recipe_id")
                             building_id = insert_data.get("building_entity_id")
-                            logging.debug(f"Passive craft UPDATED: recipe_id={recipe_id}, building_id={building_id}, entity_id={entity_id}")
+                            logging.debug(
+                                f"Passive craft UPDATED: recipe_id={recipe_id}, building_id={building_id}, entity_id={entity_id}"
+                            )
                         else:
                             # This is a new insert
                             recipe_id = insert_data.get("recipe_id")
                             building_id = insert_data.get("building_entity_id")
-                            logging.debug(f"Passive craft STARTED: recipe_id={recipe_id}, building_id={building_id}, entity_id={entity_id}")
+                            logging.debug(
+                                f"Passive craft STARTED: recipe_id={recipe_id}, building_id={building_id}, entity_id={entity_id}"
+                            )
 
                         has_crafting_changes = True
 
@@ -134,7 +138,6 @@ class CraftingProcessor(BaseProcessor):
                             delete_data = delete_operations[entity_id]
                             recipe_id = delete_data.get("recipe_id")
                             building_id = delete_data.get("building_entity_id")
-                            logging.info(f"Passive craft COLLECTED: recipe_id={recipe_id}, building_id={building_id}, entity_id={entity_id}")
                             self._cleanup_collected_notification(entity_id)
                             has_crafting_changes = True
 
@@ -193,7 +196,7 @@ class CraftingProcessor(BaseProcessor):
     def _parse_crafting_data(self, data_str):
         """
         Parse crafting data from the SpacetimeDB transaction format using PassiveCraftState dataclass.
-        
+
         This method now uses the dataclass factory method for consistent parsing.
         """
         try:
@@ -202,7 +205,7 @@ class CraftingProcessor(BaseProcessor):
             if not isinstance(data, list) or len(data) < 7:
                 return None
 
-            # Extract timestamp - can be direct value or in array format  
+            # Extract timestamp - can be direct value or in array format
             timestamp_obj = {}
             if data[4]:
                 if isinstance(data[4], list) and len(data[4]) > 0:
@@ -213,7 +216,7 @@ class CraftingProcessor(BaseProcessor):
             # Create a dict in the format expected by PassiveCraftState.from_dict()
             craft_dict = {
                 "entity_id": data[0],
-                "owner_entity_id": data[1], 
+                "owner_entity_id": data[1],
                 "recipe_id": data[2],
                 "building_entity_id": data[3],
                 "building_description_id": 0,  # Not available in transaction format
@@ -221,11 +224,11 @@ class CraftingProcessor(BaseProcessor):
                 "status": data[5] if len(data[5]) > 0 else [0, {}],
                 "slot": data[6],
             }
-            
+
             # Use dataclass factory method for validation and consistency
             passive_craft = PassiveCraftState.from_dict(craft_dict)
             return passive_craft.to_dict()
-            
+
         except Exception as e:
             logging.warning(f"Error parsing crafting data with dataclass: {e}")
             return None
@@ -264,7 +267,7 @@ class CraftingProcessor(BaseProcessor):
                     item_id = first_item[0]
                     # Use compound key system for item lookup
                     found_items = self.item_lookup_service.find_items_by_id(item_id)
-                    
+
                     if found_items:
                         # Use first found item (compound key system prevents overwrites)
                         item_info = found_items[0]
@@ -280,8 +283,6 @@ class CraftingProcessor(BaseProcessor):
         except Exception as e:
             logging.error(f"Error resolving item name for recipe {recipe_id}: {e}")
             return f"Recipe {recipe_id}"
-
-
 
     def _trigger_bundled_passive_craft_notifications(self, newly_ready_items):
         """Trigger bundled passive craft completion notifications for multiple items."""
@@ -412,54 +413,47 @@ class CraftingProcessor(BaseProcessor):
                 try:
                     # Create PassiveCraftState dataclass instance
                     passive_craft = PassiveCraftState.from_dict(row)
-                    
+
                     # Convert back to dict format for compatibility with existing logic
                     craft_data = passive_craft.to_dict()
-                    
+
                     self._passive_craft_data[passive_craft.entity_id] = craft_data
-                    
+
                     entity_id = passive_craft.entity_id
                 except (ValueError, TypeError) as e:
                     logging.debug(f"Failed to process passive craft row: {e}")
                     continue
 
-                    # Check if this craft is already completed in the initial subscription
-                    # If so, add it to notified_ready_items to prevent notifications
-                    status = craft_data.get("status", [0, {}])
-                    status_code = status[0] if status and len(status) > 0 else 0
-
-                    if status_code == 2:  # Status code 2 = READY
-                        self.notified_ready_items.add(entity_id)
-
-                    # Also check by calculating time remaining for extra safety
-                    elif craft_data.get("recipe_id"):
-                        try:
-                            # Extract timestamp using helper function
-                            timestamp_micros = craft_data.get("timestamp_micros")
-                            if timestamp_micros:
-                                recipe_id = craft_data.get("recipe_id")
-                                if self.reference_data:
-                                    recipes = self.reference_data.get("crafting_recipe_desc", [])
-                                    for recipe in recipes:
-                                        if recipe.get("id") == recipe_id:
-                                            duration_seconds = recipe.get("time_requirement", 0)
-                                            start_time = timestamp_micros / 1_000_000
-                                            current_time = time.time()
-                                            elapsed_time = current_time - start_time
-                                            remaining_time = duration_seconds - elapsed_time
-
-                                            if remaining_time <= 0:
-                                                self.notified_ready_items.add(entity_id)
-                                            break
-                        except Exception as e:
-                            logging.warning(f"Error checking passive craft completion time for {entity_id}: {e}")
-
-            for craft_id, craft_data in self._passive_craft_data.items():
-                recipe_id = craft_data.get("recipe_id")
-                building_id = craft_data.get("building_entity_id")
+                # Check if this craft is already completed in the initial subscription
+                # If so, add it to notified_ready_items to prevent notifications
                 status = craft_data.get("status", [0, {}])
                 status_code = status[0] if status and len(status) > 0 else 0
-                status_text = "READY" if status_code == 2 else "IN_PROGRESS" if status_code == 1 else "UNKNOWN"
+
+                if status_code == 2:  # Status code 2 = READY
+                    self.notified_ready_items.add(entity_id)
+
+                # Also check by calculating time remaining for extra safety
+                elif craft_data.get("recipe_id"):
+                    try:
+                        # Extract timestamp using helper function
+                        timestamp_micros = craft_data.get("timestamp_micros")
+                        if timestamp_micros:
+                            recipe_id = craft_data.get("recipe_id")
+                            if self.reference_data:
+                                recipes = self.reference_data.get("crafting_recipe_desc", [])
+                                for recipe in recipes:
+                                    if recipe.get("id") == recipe_id:
+                                        duration_seconds = recipe.get("time_requirement", 0)
+                                        start_time = timestamp_micros / 1_000_000
+                                        current_time = time.time()
+                                        elapsed_time = current_time - start_time
+                                        remaining_time = duration_seconds - elapsed_time
+
+                                        if remaining_time <= 0:
+                                            self.notified_ready_items.add(entity_id)
+                                        break
+                    except Exception as e:
+                        logging.warning(f"Error checking passive craft completion time for {entity_id}: {e}")
 
         except Exception as e:
             logging.error(f"Error processing passive craft data: {e}")
@@ -526,7 +520,7 @@ class CraftingProcessor(BaseProcessor):
                 try:
                     # Create ClaimMemberState dataclass instance
                     member = ClaimMemberState.from_dict(row)
-                    
+
                     # Store all claim member data since the query service already filters by current claim
                     if member.player_entity_id and member.user_name:
                         self._claim_members[str(member.player_entity_id)] = member.user_name
@@ -632,7 +626,9 @@ class CraftingProcessor(BaseProcessor):
                                 recipe_id = operation.get("recipe_id")
                                 if recipe_id:
                                     item_name = self._get_item_name_from_recipe(recipe_id)
-                                    newly_ready_items.append({"entity_id": entity_id, "recipe_id": recipe_id, "item_name": item_name})
+                                    newly_ready_items.append(
+                                        {"entity_id": entity_id, "recipe_id": recipe_id, "item_name": item_name}
+                                    )
                             self.notified_ready_items.add(entity_id)
 
                 updated_operations.append(operation)
@@ -663,7 +659,6 @@ class CraftingProcessor(BaseProcessor):
 
         except Exception as e:
             logging.error(f"Error updating timers: {e}")
-
 
     def _calculate_current_time_remaining(self, operation):
         """
@@ -863,8 +858,8 @@ class CraftingProcessor(BaseProcessor):
                 # Calculate time remaining
                 status_code = status[0] if status and len(status) > 0 else 0
                 time_remaining_display = "READY"
-                remaining_seconds = 0  
-                
+                remaining_seconds = 0
+
                 if status_code == 1 and timestamp_micros:  # IN_PROGRESS
                     current_time_micros = int(time.time() * 1_000_000)
                     elapsed_micros = current_time_micros - timestamp_micros
@@ -899,18 +894,20 @@ class CraftingProcessor(BaseProcessor):
 
                         # Look up item details using compound key system
                         found_items = self.item_lookup_service.find_items_by_id(item_id)
-                        
+
                         if found_items:
                             # Use first found item (compound key system prevents overwrites)
                             item_info = found_items[0]
                             item_name = item_info.get("name", f"Unknown Item {item_id}")
                             item_tier = item_info.get("tier", 0)
                             item_tag = item_info.get("tag", "")
-                            
+
                             # Log when there are multiple items for debugging
                             if len(found_items) > 1:
                                 all_names = [item.get("name", "") for item in found_items]
-                                logging.debug(f"[CraftingProcessor] Item {item_id} has multiple matches: {all_names}, using: '{item_name}'")
+                                logging.debug(
+                                    f"[CraftingProcessor] Item {item_id} has multiple matches: {all_names}, using: '{item_name}'"
+                                )
                         else:
                             item_name = f"Unknown Item {item_id}"
                             item_tier = 0
@@ -929,7 +926,7 @@ class CraftingProcessor(BaseProcessor):
                         "crafter": crafter_name,
                         "building_name": container_name,
                         "time_remaining": time_remaining_display,
-                        "remaining_seconds": remaining_seconds,  
+                        "remaining_seconds": remaining_seconds,
                         "entity_id": craft_id,  # This is the entity_id for timer updates
                         "craft_id": craft_id,
                         "recipe_name": recipe_name,
@@ -997,7 +994,7 @@ class CraftingProcessor(BaseProcessor):
 
                 # Use sticky child grouping to prevent flickering
                 child_group_key = self._assign_to_sticky_child_group(op, item_crafter_key)
-                
+
                 if child_group_key not in hierarchy[item_crafter_key]["buildings"]:
                     hierarchy[item_crafter_key]["buildings"][child_group_key] = {
                         "building_name": op["building_name"],
@@ -1093,7 +1090,7 @@ class CraftingProcessor(BaseProcessor):
                         "is_expandable": False,
                         "expansion_level": 1,
                     }
-                    
+
                     child_operations.append(child_row)
 
                 # Determine if parent should be expandable
@@ -1274,7 +1271,6 @@ class CraftingProcessor(BaseProcessor):
             logging.warning(f"Error converting time string '{time_str}' to seconds: {e}")
             return None
 
-
     def _format_crafting_for_ui(self, consolidated_crafting):
         """
         Convert consolidated crafting dictionary to list format expected by UI.
@@ -1371,23 +1367,23 @@ class CraftingProcessor(BaseProcessor):
     def _get_time_bucket(self, remaining_seconds):
         """
         Get time bucket for grouping jobs with similar completion times.
-        
+
         This prevents job count flickering when jobs are only seconds apart
         by grouping them into time buckets for display purposes.
-        
+
         Args:
             remaining_seconds: Time remaining in seconds
-            
+
         Returns:
             int: Bucketed time in seconds for consistent grouping
         """
         try:
             if self.TIME_GROUPING_BUCKET_SECONDS <= 1:
                 return remaining_seconds  # No bucketing
-            
+
             # Round to nearest bucket interval
             return round(remaining_seconds / self.TIME_GROUPING_BUCKET_SECONDS) * self.TIME_GROUPING_BUCKET_SECONDS
-            
+
         except Exception as e:
             logging.warning(f"Error calculating time bucket for {remaining_seconds}s: {e}")
             return remaining_seconds  # Fallback to original time
@@ -1395,15 +1391,15 @@ class CraftingProcessor(BaseProcessor):
     def _assign_to_sticky_child_group(self, operation, item_crafter_key):
         """
         Assign operation to a sticky child group, preventing child row flickering.
-        
+
         Once operations are assigned to a child group, they stay in that group
         regardless of timing changes. New operations either join existing groups
         or create new ones if they don't match.
-        
+
         Args:
             operation: The crafting operation to assign
             item_crafter_key: The parent key (item_name|crafter)
-            
+
         Returns:
             str: Child group key for building hierarchy
         """
@@ -1411,28 +1407,30 @@ class CraftingProcessor(BaseProcessor):
             # Initialize cache for this item+crafter if needed
             if item_crafter_key not in self._child_groups_cache:
                 self._child_groups_cache[item_crafter_key] = {}
-            
+
             cache = self._child_groups_cache[item_crafter_key]
             entity_id = operation.get("entity_id")
             building_name = operation["building_name"]
             remaining_seconds = operation.get("remaining_seconds", 0)
-            
+
             # If we've seen this specific operation before, return its existing group
             for group_key, group_info in cache.items():
                 if entity_id in group_info.get("entity_ids", set()):
                     # Update the group's display time to most recent
                     group_info["time_remaining"] = operation["time_remaining"]
                     return group_key
-            
+
             # This is a new operation - try to find a matching group
             matching_group_key = None
             for group_key, group_info in cache.items():
                 # Match criteria: same building + within time tolerance
-                if (group_info["building_name"] == building_name and
-                    abs(group_info["reference_seconds"] - remaining_seconds) <= self.TIME_GROUPING_BUCKET_SECONDS):
+                if (
+                    group_info["building_name"] == building_name
+                    and abs(group_info["reference_seconds"] - remaining_seconds) <= self.TIME_GROUPING_BUCKET_SECONDS
+                ):
                     matching_group_key = group_key
                     break
-            
+
             if matching_group_key:
                 # Add to existing group
                 cache[matching_group_key]["entity_ids"].add(entity_id)
@@ -1447,10 +1445,10 @@ class CraftingProcessor(BaseProcessor):
                     "building_name": building_name,
                     "reference_seconds": remaining_seconds,  # Reference time for matching new operations
                     "time_remaining": operation["time_remaining"],  # Display time
-                    "entity_ids": {entity_id}
+                    "entity_ids": {entity_id},
                 }
                 return new_group_key
-                
+
         except Exception as e:
             logging.warning(f"Error assigning sticky child group: {e}")
             # Fallback to original logic
@@ -1459,39 +1457,36 @@ class CraftingProcessor(BaseProcessor):
     def _cleanup_completed_operations(self, current_operations):
         """
         Clean up completed operations from sticky child groups cache.
-        
+
         Removes entity_ids that are no longer present in current operations,
         and cleans up empty groups.
-        
+
         Args:
             current_operations: List of current active operations
         """
         try:
             # Get set of current entity_ids
             current_entity_ids = {op.get("entity_id") for op in current_operations if op.get("entity_id")}
-            
+
             # Clean up each cached item+crafter group
             for item_crafter_key in list(self._child_groups_cache.keys()):
                 cache = self._child_groups_cache[item_crafter_key]
-                
+
                 # Clean up each child group
                 for group_key in list(cache.keys()):
                     group_info = cache[group_key]
-                    
+
                     # Remove completed entity_ids
-                    group_info["entity_ids"] = {
-                        eid for eid in group_info["entity_ids"] 
-                        if eid in current_entity_ids
-                    }
-                    
+                    group_info["entity_ids"] = {eid for eid in group_info["entity_ids"] if eid in current_entity_ids}
+
                     # Remove empty groups
                     if not group_info["entity_ids"]:
                         del cache[group_key]
-                
+
                 # Remove empty item+crafter caches
                 if not cache:
                     del self._child_groups_cache[item_crafter_key]
-                    
+
         except Exception as e:
             logging.warning(f"Error cleaning up completed operations: {e}")
 
@@ -1551,7 +1546,7 @@ class CraftingProcessor(BaseProcessor):
         # Clear notification tracking to prevent stale notifications after claim switch
         if hasattr(self, "notified_ready_items"):
             self.notified_ready_items.clear()
-            
+
         # Clear sticky child groups cache
         if hasattr(self, "_child_groups_cache"):
             self._child_groups_cache.clear()

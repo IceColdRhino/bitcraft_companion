@@ -5,12 +5,13 @@ import customtkinter as ctk
 from tkinter import Menu, ttk
 
 from app.ui.components.filter_popup import FilterPopup
+from app.ui.components.optimized_table_mixin import OptimizedTableMixin
 from app.ui.styles import TreeviewStyles
 from app.ui.themes import get_color, register_theme_callback
 from app.services.search_parser import SearchParser
 
 
-class PassiveCraftingTab(ctk.CTkFrame):
+class PassiveCraftingTab(ctk.CTkFrame, OptimizedTableMixin):
     """The tab for displaying passive crafting status with item-focused, expandable rows."""
 
     def __init__(self, master, app):
@@ -36,10 +37,12 @@ class PassiveCraftingTab(ctk.CTkFrame):
         # Track expansion state for better user experience
         self.auto_expand_on_first_load = False
         self.has_had_first_load = False
-        
 
         self._create_widgets()
         self._create_context_menu()
+        
+        # Initialize optimization features after UI is created
+        self.__init_optimization__(max_workers=2, max_cache_size_mb=50)
 
     def _create_widgets(self):
         """Creates the styled Treeview and its scrollbars."""
@@ -400,7 +403,65 @@ class PassiveCraftingTab(ctk.CTkFrame):
         self.filtered_data.sort(key=get_sort_key, reverse=self.sort_reverse)
 
     def update_data(self, new_data):
-        """Update the tab with new passive crafting data."""
+        """Update the tab with new passive crafting data using optimization."""
+        self._debounce_operation("data_update", self._process_data_update, new_data)
+
+    def _process_data_update(self, new_data):
+        """Process passive crafting data update with background processing for large datasets."""
+        try:
+            data_size = len(new_data) if new_data else 0
+            logging.debug(f"[PassiveCraftingTab] Updating data - {data_size} items")
+
+            # Use background processing for large datasets
+            if new_data and len(new_data) > 50:
+                self._submit_background_task(
+                    "passive_crafting_processing",
+                    self._process_passive_data_background,
+                    self._on_passive_processing_complete,
+                    self._on_passive_processing_error,
+                    priority=2,
+                    new_data=new_data[:]
+                )
+            else:
+                # Synchronous processing for small datasets
+                self._process_passive_data_sync(new_data)
+
+        except Exception as e:
+            logging.error(f"[PassiveCraftingTab] Error updating data: {e}")
+
+    def _process_passive_data_background(self, new_data):
+        """Background processing for passive crafting data."""
+        processed_data = new_data[:] if new_data else []
+        return {"processed_data": processed_data}
+
+    def _on_passive_processing_complete(self, result):
+        """Callback when background passive crafting processing completes."""
+        try:
+            processed_data = result["processed_data"]
+            self.all_data = processed_data
+            logging.info(f"[PassiveCraftingTab] Background processing completed - {len(processed_data)} items")
+            
+            # Apply current filters to new data
+            self._apply_all_filters()
+            
+            # Auto-expand on first load if enabled
+            if not self.has_had_first_load and self.auto_expand_on_first_load and self.filtered_data:
+                self.has_had_first_load = True
+                self._expand_all_items()
+            elif self.has_had_first_load:
+                self.has_had_first_load = True
+                
+        except Exception as e:
+            logging.error(f"Error handling background passive crafting processing result: {e}")
+
+    def _on_passive_processing_error(self, error):
+        """Callback when background passive crafting processing fails."""
+        logging.error(f"Background passive crafting processing failed: {error}")
+        # Fallback to synchronous processing
+        self._process_passive_data_sync(self._last_raw_data if hasattr(self, '_last_raw_data') else [])
+
+    def _process_passive_data_sync(self, new_data):
+        """Synchronous processing for passive crafting data."""
         self.all_data = new_data if new_data else []
         
         # Apply current filters to new data
@@ -411,24 +472,27 @@ class PassiveCraftingTab(ctk.CTkFrame):
             self.has_had_first_load = True
             self._expand_all_items()
         elif self.has_had_first_load:
-            # Preserve expansion state on subsequent loads
             self.has_had_first_load = True
 
     def _update_display(self):
-        """Update the TreeView display with current filtered data."""
-        # Clear existing items
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-        
+        """Update the TreeView display with optimization support."""
         if not self.filtered_data:
-            # Show "No passive crafts active" message
+            # Clear and show empty message
+            self.tree.delete(*self.tree.get_children())
             empty_item = self.tree.insert("", "end", values=["No passive crafts active", "", "", "", "", "", "", ""])
             self.tree.item(empty_item, tags=("empty",))
             return
 
-        # Add items to tree
-        for item in self.filtered_data:
-            self._add_item_to_tree(item)
+        # Use lazy loading for large datasets
+        if len(self.filtered_data) > self._lazy_load_threshold:
+            self._render_lazy_loading(self.filtered_data)
+        else:
+            # Direct rendering for smaller datasets
+            self.tree.delete(*self.tree.get_children())
+            self._ui_item_cache.clear()
+            
+            for item in self.filtered_data:
+                self._insert_tree_item(item)
 
     def _add_item_to_tree(self, item):
         """Add a single item with its operations to the tree."""
@@ -477,5 +541,62 @@ class PassiveCraftingTab(ctk.CTkFrame):
 
     def destroy(self):
         """Clean up resources when tab is destroyed."""
-        # Call parent destroy
+        try:
+            self.optimization_shutdown()
+        except Exception as e:
+            logging.error(f"Error during optimization shutdown: {e}")
         super().destroy()
+
+    def _get_comparison_fields(self) -> List[str]:
+        """Get fields to compare for change detection."""
+        return ["item", "tier", "total_quantity", "tag", "total_jobs", "time_remaining", "crafter", "building_name"]
+
+    def _generate_item_key(self, item_data):
+        """Generate unique key for passive crafting items."""
+        key_tuple = (
+            item_data.get("item", "Unknown"),
+            item_data.get("tier", 0),
+            item_data.get("crafter", ""),
+            item_data.get("building_name", "")
+        )
+        if key_tuple not in self._memory_manager["item_pool"]:
+            self._memory_manager["item_pool"][key_tuple] = "|".join(str(x) for x in key_tuple)
+        return self._memory_manager["item_pool"][key_tuple]
+
+    def _insert_tree_item(self, item_data):
+        """Insert passive crafting item into tree."""
+        # Determine item-level tag based on time remaining
+        item_tag = "ready" if "READY" in item_data.get("time_remaining", "") else "crafting"
+        
+        # Create parent item
+        item_values = [
+            item_data.get("item", ""),
+            item_data.get("tier", ""),
+            item_data.get("total_quantity", ""),
+            item_data.get("tag", ""),
+            f"{item_data.get('completed_jobs', 0)}/{item_data.get('total_jobs', 0)}",
+            item_data.get("time_remaining", ""),
+            item_data.get("crafter", ""),
+            item_data.get("building_name", ""),
+        ]
+        
+        parent_id = self.tree.insert("", "end", values=item_values, tags=(item_tag,))
+        
+        # Add child operations if expandable
+        if item_data.get("is_expandable", False):
+            for operation in item_data.get("operations", []):
+                child_tag = "ready" if operation.get("time_remaining", "") == "READY" else "crafting"
+                child_values = [
+                    "",  # Empty item name for child
+                    "",  # Empty tier for child
+                    operation.get("quantity", ""),
+                    "",  # Empty tag for child
+                    "",  # Empty jobs for child
+                    operation.get("time_remaining", ""),
+                    operation.get("crafter", ""),
+                    operation.get("building_name", ""),
+                ]
+                self.tree.insert(parent_id, "end", values=child_values, tags=("child", child_tag))
+
+        item_key = self._generate_item_key(item_data)
+        self._ui_item_cache[item_key] = parent_id

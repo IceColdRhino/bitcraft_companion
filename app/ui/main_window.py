@@ -1214,6 +1214,17 @@ class MainWindow(ctk.CTk):
                         logging.debug("[MainWindow] Stopping task refresh timer...")
                         self.claim_info.stop_task_refresh_timer()
 
+                    # Cleanup tabs with background processors
+                    if hasattr(self, "tabs"):
+                        logging.debug("[MainWindow] Cleaning up tabs...")
+                        for tab_name, tab in self.tabs.items():
+                            if hasattr(tab, 'shutdown'):
+                                try:
+                                    tab.shutdown()
+                                    logging.debug(f"[MainWindow] Cleaned up tab: {tab_name}")
+                                except Exception as e:
+                                    logging.error(f"[MainWindow] Error cleaning up tab {tab_name}: {e}")
+
                     self.shutdown_dialog.update_status("Saving data...")
 
                     # Give services a moment to clean up
@@ -1626,6 +1637,12 @@ class MainWindow(ctk.CTk):
                     if self.is_loading:
                         self.received_data_types.add("claim_info")
                         self._check_all_data_loaded()
+
+                elif msg_type == "activity_status":
+                    # Update player activity status in the claim info header
+                    if hasattr(self, "claim_info") and self.claim_info:
+                        self.claim_info.update_player_activity_status(msg_data)
+                        logging.debug(f"Activity status updated: {msg_data.get('status', 'Unknown')}")
 
                 elif msg_type == "reference_data_update":
                     # Update ClaimInfoHeader when claim_tile_cost data changes

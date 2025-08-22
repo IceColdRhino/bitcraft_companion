@@ -32,6 +32,8 @@ a = Analysis(
     datas=[
         # Include images folder for loading overlays and other UI assets
         ('app/ui/images', 'app/ui/images'),
+        # Include sounds folder for notification sound files
+        ('app/ui/sounds', 'app/ui/sounds'),
     ],
     hiddenimports=[
         # CustomTkinter and its dependencies
@@ -85,6 +87,7 @@ a = Analysis(
         'app.services.claim_service',
         'app.services.claim_members_service',
         'app.services.notification_service',
+        'app.services.sound_service',
         
         # UI Components 
         'app.ui.main_window',
@@ -92,7 +95,6 @@ a = Analysis(
         'app.ui.components.filter_popup',
         'app.ui.components.export_utils',
         'app.ui.components.settings_window',
-        'app.ui.components.notification_window',
         'app.ui.components.loading_overlay',
         'app.ui.styles.treeview_styles',
         'app.ui.tabs.claim_inventory_tab',
@@ -110,7 +112,10 @@ a = Analysis(
         'app.models.claim_member',
         'app.models.object_dataclasses',
         
-        # Additional dependencies 
+        # Additional dependencies
+        'pygame',
+        'pygame.mixer',
+        'win11toast',
         'openpyxl',
         'openpyxl.styles',
         'openpyxl.utils',

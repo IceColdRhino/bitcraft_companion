@@ -251,3 +251,151 @@ class TestSearchParserMultipleConditions:
             assert len(query['keywords']['item']) == 2
         finally:
             logger.setLevel(original_level)
+
+
+class TestSearchParserOrAndOperators:
+    """Test OR (||) and AND (&) operators within field values."""
+
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.parser = SearchParser()
+    
+    def test_parse_or_operator(self):
+        """Test parsing OR operator within field values."""
+        result = self.parser.parse_search_query("item=plank||lumber||wood")
+        
+        expected = {
+            'keywords': {
+                'item': [('=', {'type': 'or', 'values': ['plank', 'lumber', 'wood']})]
+            },
+            'regular_terms': []
+        }
+        
+        assert result == expected
+    
+    def test_parse_and_operator(self):
+        """Test parsing AND operator within field values."""
+        result = self.parser.parse_search_query("item=refined&ore")
+        
+        expected = {
+            'keywords': {
+                'item': [('=', {'type': 'and', 'values': ['refined', 'ore']})]
+            },
+            'regular_terms': []
+        }
+        
+        assert result == expected
+    
+    def test_match_or_operator_success(self):
+        """Test OR matching returns true when any value matches."""
+        query = self.parser.parse_search_query("item=plank||lumber||wood")
+        
+        # Should match any of the OR values
+        assert self.parser.match_row({'item': 'oak plank'}, query) == True
+        assert self.parser.match_row({'item': 'maple lumber'}, query) == True
+        assert self.parser.match_row({'item': 'birch wood'}, query) == True
+        assert self.parser.match_row({'item': 'hardwood plank'}, query) == True
+    
+    def test_match_or_operator_failure(self):
+        """Test OR matching returns false when no values match."""
+        query = self.parser.parse_search_query("item=plank||lumber||wood")
+        
+        # Should not match non-matching values
+        assert self.parser.match_row({'item': 'stone block'}, query) == False
+        assert self.parser.match_row({'item': 'iron ore'}, query) == False
+        assert self.parser.match_row({'item': 'clay pot'}, query) == False
+    
+    def test_match_and_operator_success(self):
+        """Test AND matching returns true when all values match."""
+        query = self.parser.parse_search_query("item=refined&ore")
+        
+        # Should match only when both terms are present
+        assert self.parser.match_row({'item': 'refined iron ore'}, query) == True
+        assert self.parser.match_row({'item': 'refined copper ore'}, query) == True
+        assert self.parser.match_row({'item': 'high grade refined ore'}, query) == True
+    
+    def test_match_and_operator_failure(self):
+        """Test AND matching returns false when not all values match."""
+        query = self.parser.parse_search_query("item=refined&ore")
+        
+        # Should not match when only one term is present
+        assert self.parser.match_row({'item': 'refined ingot'}, query) == False
+        assert self.parser.match_row({'item': 'iron ore'}, query) == False
+        assert self.parser.match_row({'item': 'raw copper'}, query) == False
+        assert self.parser.match_row({'item': 'stone block'}, query) == False
+    
+    def test_numeric_or_operator(self):
+        """Test OR operator with numeric values."""
+        query = self.parser.parse_search_query("tier=1||3||5")
+        
+        # Should match any of the specified tiers
+        assert self.parser.match_row({'tier': 1}, query) == True
+        assert self.parser.match_row({'tier': 3}, query) == True
+        assert self.parser.match_row({'tier': 5}, query) == True
+        assert self.parser.match_row({'tier': 2}, query) == False
+        assert self.parser.match_row({'tier': 4}, query) == False
+    
+    def test_mixed_or_and_operators(self):
+        """Test combining OR and AND operators in different fields."""
+        query = self.parser.parse_search_query("item=plank||lumber container=workshop&storage")
+        
+        # Test item OR logic
+        test_row1 = {'item': 'oak plank', 'container': 'workshop storage chest'}
+        assert self.parser.match_row(test_row1, query) == True
+        
+        test_row2 = {'item': 'maple lumber', 'container': 'workshop storage box'}
+        assert self.parser.match_row(test_row2, query) == True
+        
+        # Should fail if container doesn't match AND condition
+        test_row3 = {'item': 'oak plank', 'container': 'workshop'}
+        assert self.parser.match_row(test_row3, query) == False
+        
+        # Should fail if item doesn't match OR condition
+        test_row4 = {'item': 'stone block', 'container': 'workshop storage'}
+        assert self.parser.match_row(test_row4, query) == False
+    
+    def test_or_and_with_other_operators(self):
+        """Test OR/AND operators combined with other comparison operators."""
+        # This should work: find items that are either plank or lumber AND tier > 2
+        query = self.parser.parse_search_query("item=plank||lumber tier>2")
+        
+        test_row1 = {'item': 'oak plank', 'tier': 3}
+        assert self.parser.match_row(test_row1, query) == True
+        
+        test_row2 = {'item': 'maple lumber', 'tier': 4}
+        assert self.parser.match_row(test_row2, query) == True
+        
+        # Should fail if tier is too low
+        test_row3 = {'item': 'oak plank', 'tier': 1}
+        assert self.parser.match_row(test_row3, query) == False
+    
+    def test_container_or_operator(self):
+        """Test OR operator with containers field."""
+        query = self.parser.parse_search_query("container=workshop||carving")
+        
+        # Should match if item is in either container type
+        test_row1 = {'containers': {'workshop chest': 5, 'storage': 2}}
+        assert self.parser.match_row(test_row1, query) == True
+        
+        test_row2 = {'containers': {'carving table': 3, 'supply box': 1}}
+        assert self.parser.match_row(test_row2, query) == True
+        
+        # Should not match if neither container type is present
+        test_row3 = {'containers': {'storage chest': 5, 'supply box': 2}}
+        assert self.parser.match_row(test_row3, query) == False
+    
+    def test_edge_cases_or_and(self):
+        """Test edge cases for OR and AND operators."""
+        # Empty values should be handled gracefully
+        query1 = self.parser.parse_search_query("item=||lumber")
+        # Should still work with one valid value
+        assert 'item' in query1['keywords']
+        
+        # Single value with OR should work like normal
+        query2 = self.parser.parse_search_query("item=plank||")
+        assert 'item' in query2['keywords']
+        
+        # Whitespace should be handled
+        query3 = self.parser.parse_search_query("item=plank || lumber || wood")
+        test_row = {'item': 'oak plank'}
+        assert self.parser.match_row(test_row, query3) == True

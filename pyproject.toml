@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "app"
-version = "0.2.31"
+version = "0.2.34"
 description = ""
 authors = ["Hatchet Jackk <helloitsyourdadcube@gmail.com>"]
 readme = "README.md"
@@ -17,6 +17,7 @@ packaging = "^24.0"
 pillow = "^11.3.0"
 python-dotenv = "^1.1.1"
 toml = "^0.10.2"
+pygame = "^2.6.1"
 numpy = "2.2.6"
 
 [tool.poetry.group.dev.dependencies]

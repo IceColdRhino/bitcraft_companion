@@ -13,6 +13,7 @@ from .claims_processor import ClaimsProcessor
 from .active_crafting_processor import ActiveCraftingProcessor
 from .compare_jobs_processor import CompareJobsProcessor
 from .reference_data_processor import ReferenceDataProcessor
+from .stamina_processor import StaminaProcessor
 
 __all__ = [
     "BaseProcessor",
@@ -23,4 +24,5 @@ __all__ = [
     "ActiveCraftingProcessor",
     "CompareJobsProcessor",
     "ReferenceDataProcessor",
+    "StaminaProcessor",
 ]

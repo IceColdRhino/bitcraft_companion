@@ -7,12 +7,13 @@ import customtkinter as ctk
 from tkinter import Menu, ttk
 
 from app.ui.components.filter_popup import FilterPopup
+from app.ui.components.optimized_table_mixin import OptimizedTableMixin
 from app.ui.styles import TreeviewStyles
 from app.ui.themes import get_color, register_theme_callback
 from app.services.search_parser import SearchParser
 
 
-class ClaimInventoryTab(ctk.CTkFrame):
+class ClaimInventoryTab(ctk.CTkFrame, OptimizedTableMixin):
     """The tab for displaying claim inventory with expandable rows for multi-container items."""
 
     def __init__(self, master, app):
@@ -45,10 +46,12 @@ class ClaimInventoryTab(ctk.CTkFrame):
         # Time-based change tracking for fading
         self.change_timestamps: Dict[str, float] = {}  # item_name -> timestamp
         self.container_change_timestamps: Dict[str, Dict[str, float]] = {}  # item_name -> {container: timestamp}
-        
 
         self._create_widgets()
         self._create_context_menu()
+        
+        # Initialize optimization features after UI is created
+        self.__init_optimization__(max_workers=2, max_cache_size_mb=75)
 
     def _create_widgets(self):
         """Creates the styled Treeview and its scrollbars."""
@@ -183,59 +186,128 @@ class ClaimInventoryTab(ctk.CTkFrame):
             self.apply_filter()
 
     def update_data(self, new_data):
-        """Receives new inventory data and converts it to the table format."""
+        """Receives new inventory data and processes it with optimization."""
+        self._debounce_operation("data_update", self._process_data_update, new_data)
 
+    def _process_data_update(self, new_data):
+        """Process inventory data update with background processing for large datasets."""
         try:
             data_size = len(new_data) if isinstance(new_data, (dict, list)) else 0
-            logging.info(f"[ClaimInventoryTab] Updating data - type: {type(new_data)}, size: {data_size}")
+            logging.debug(f"[ClaimInventoryTab] Updating data - type: {type(new_data)}, size: {data_size}")
             
-            # Log if this looks like a transaction update
             if hasattr(new_data, 'get') and new_data.get('transaction_update'):
                 logging.info(f"[ClaimInventoryTab] Received transaction update flag")
             
-            # Sample some data for debugging (without logging sensitive info)
             if isinstance(new_data, dict) and new_data:
                 sample_items = list(new_data.keys())[:3]
                 logging.debug(f"[ClaimInventoryTab] Sample items in update: {sample_items}")
 
-            if isinstance(new_data, dict):
-                table_data = []
-                current_quantities = {}
-                current_container_quantities = {}
-                
-                for item_name, item_info in new_data.items():
-                    quantity = item_info.get("total_quantity", 0)
-                    containers = item_info.get("containers", {})
-                    
-                    current_quantities[item_name] = quantity
-                    current_container_quantities[item_name] = containers.copy()
-                    
-                    table_data.append(
-                        {
-                            "name": item_name,
-                            "tier": item_info.get("tier", 0),
-                            "quantity": quantity,
-                            "tag": item_info.get("tag", ""),
-                            "containers": containers,
-                        }
-                    )
-                
-                # Calculate quantity changes
-                self._calculate_quantity_changes(current_quantities, current_container_quantities)
-                
-                self.all_data = table_data
-                logging.info(f"[ClaimInventoryTab] Successfully processed {len(table_data)} inventory items")
+            # Use background processing for large datasets
+            if isinstance(new_data, dict) and len(new_data) > 100:
+                self._submit_background_task(
+                    "inventory_processing",
+                    self._process_inventory_data_background,
+                    self._on_inventory_processing_complete,
+                    self._on_inventory_processing_error,
+                    priority=2,
+                    new_data=new_data.copy(),
+                    previous_quantities=self.previous_quantities.copy(),
+                    previous_container_quantities=self.previous_container_quantities.copy()
+                )
             else:
-                self.all_data = new_data if isinstance(new_data, list) else []
-                logging.info(f"[ClaimInventoryTab] Set data to list with {len(self.all_data)} items")
-
-            # Apply filter and render table
-            self.apply_filter()
-            logging.info(f"[ClaimInventoryTab] Data update completed successfully")
+                # Synchronous processing for small datasets
+                self._process_inventory_data_sync(new_data)
 
         except Exception as e:
             logging.error(f"[ClaimInventoryTab] Error updating data: {e}")
             logging.debug(traceback.format_exc())
+
+    def _process_inventory_data_background(self, new_data, previous_quantities, previous_container_quantities):
+        """Background processing for inventory data transformation."""
+        table_data = []
+        current_quantities = {}
+        current_container_quantities = {}
+        
+        for item_name, item_info in new_data.items():
+            quantity = item_info.get("total_quantity", 0)
+            containers = item_info.get("containers", {})
+            
+            current_quantities[item_name] = quantity
+            current_container_quantities[item_name] = containers.copy()
+            
+            table_data.append({
+                "name": item_name,
+                "tier": item_info.get("tier", 0),
+                "quantity": quantity,
+                "tag": item_info.get("tag", ""),
+                "containers": containers,
+            })
+        
+        return {
+            "table_data": table_data,
+            "current_quantities": current_quantities,
+            "current_container_quantities": current_container_quantities
+        }
+
+    def _on_inventory_processing_complete(self, result):
+        """Callback when background inventory processing completes."""
+        try:
+            table_data = result["table_data"]
+            current_quantities = result["current_quantities"]
+            current_container_quantities = result["current_container_quantities"]
+            
+            # Calculate quantity changes
+            self._calculate_quantity_changes(current_quantities, current_container_quantities)
+            
+            self.all_data = table_data
+            logging.info(f"[ClaimInventoryTab] Background processing completed - {len(table_data)} items")
+            
+            # Apply filter and render table
+            self.apply_filter()
+            
+        except Exception as e:
+            logging.error(f"Error handling background inventory processing result: {e}")
+
+    def _on_inventory_processing_error(self, error):
+        """Callback when background inventory processing fails."""
+        logging.error(f"Background inventory processing failed: {error}")
+        # Fallback to synchronous processing
+        self._process_inventory_data_sync(self._last_raw_data if hasattr(self, '_last_raw_data') else {})
+
+    def _process_inventory_data_sync(self, new_data):
+        """Synchronous processing for inventory data."""
+        if isinstance(new_data, dict):
+            table_data = []
+            current_quantities = {}
+            current_container_quantities = {}
+            
+            for item_name, item_info in new_data.items():
+                quantity = item_info.get("total_quantity", 0)
+                containers = item_info.get("containers", {})
+                
+                current_quantities[item_name] = quantity
+                current_container_quantities[item_name] = containers.copy()
+                
+                table_data.append({
+                    "name": item_name,
+                    "tier": item_info.get("tier", 0),
+                    "quantity": quantity,
+                    "tag": item_info.get("tag", ""),
+                    "containers": containers,
+                })
+            
+            # Calculate quantity changes
+            self._calculate_quantity_changes(current_quantities, current_container_quantities)
+            
+            self.all_data = table_data
+            logging.info(f"[ClaimInventoryTab] Successfully processed {len(table_data)} inventory items")
+        else:
+            self.all_data = new_data if isinstance(new_data, list) else []
+            logging.info(f"[ClaimInventoryTab] Set data to list with {len(self.all_data)} items")
+
+        # Apply filter and render table
+        self.apply_filter()
+        logging.info(f"[ClaimInventoryTab] Data update completed successfully")
 
     def _calculate_quantity_changes(self, current_quantities, current_container_quantities):
         """Calculate changes in item quantities since last update."""
@@ -595,85 +667,92 @@ class ClaimInventoryTab(ctk.CTkFrame):
 
 
     def render_table(self):
-        """Clears and re-populates the Treeview with correct column layout."""
-
+        """Renders table with optimization support for large datasets."""
         try:
             logging.debug(f"[ClaimInventoryTab] Starting table render - {len(self.filtered_data)} items")
 
-            # Clear existing rows
-            existing_children = self.tree.get_children()
-            logging.debug(f"[ClaimInventoryTab] Clearing {len(existing_children)} existing rows")
-            self.tree.delete(*existing_children)
+            # Use lazy loading for large datasets
+            if len(self.filtered_data) > self._lazy_load_threshold:
+                self._render_lazy_loading(self.filtered_data)
+            else:
+                # Direct rendering for smaller datasets
+                self._render_direct(self.filtered_data)
 
-            rows_added = 0
-            child_rows_added = 0
-            for row_data in self.filtered_data:
-                item_name = row_data.get("name", "")
-                containers = row_data.get("containers", {})
-                base_quantity = row_data.get("quantity", 0)
-
-                # Format quantity with change indicators
-                quantity_display = self._format_quantity_with_change(item_name, base_quantity)
-
-                values = [
-                    item_name,
-                    str(row_data.get("tier", "")),
-                    quantity_display,
-                    str(row_data.get("tag", "")),
-                    f"{len(containers)} Containers" if len(containers) > 1 else next(iter(containers.keys()), "N/A"),
-                ]
-
-                # Apply color tags only to quantity column when there are changes
-                tags = []
-                if item_name in self.quantity_changes:
-                    change = self.quantity_changes[item_name]
-                    if change > 0:
-                        tags.append("quantity_increase")
-                    elif change < 0:
-                        tags.append("quantity_decrease")
-
-                try:
-                    if len(containers) > 1:
-                        item_id = self.tree.insert("", "end", values=values, tags=tags)
-                    else:
-                        item_id = self.tree.insert("", "end", text="", values=values, open=False, tags=tags)
-                    rows_added += 1
-
-                    if len(containers) > 1:
-                        for container_name, quantity in containers.items():
-                            # Format container quantity with container-specific changes
-                            container_quantity_display = self._format_quantity_with_change(item_name, quantity, container_name)
-                            
-                            # Apply container-specific color tags when there are changes
-                            child_tags = ["child"]
-                            if (item_name in self.container_quantity_changes and 
-                                container_name in self.container_quantity_changes[item_name]):
-                                change = self.container_quantity_changes[item_name][container_name]
-                                if change > 0:
-                                    child_tags.append("quantity_increase")
-                                elif change < 0:
-                                    child_tags.append("quantity_decrease")
-                            
-                            child_values = [
-                                f"  └─ {item_name}",
-                                str(row_data.get("tier", "")),
-                                container_quantity_display,
-                                str(row_data.get("tag", "")),
-                                container_name,
-                            ]
-                            self.tree.insert(item_id, "end", text="", values=child_values, tags=child_tags)
-                            child_rows_added += 1
-
-                except Exception as e:
-                    logging.error(f"[ClaimInventoryTab] Error adding row for {item_name}: {e}")
-
-            logging.debug(
-                f"[ClaimInventoryTab] Table render complete - added {rows_added} main rows, {child_rows_added} child rows"
-            )
+            logging.debug(f"[ClaimInventoryTab] Table render complete")
 
         except Exception as e:
             logging.error(f"[ClaimInventoryTab] Critical error during table render: {e}")
             logging.debug(traceback.format_exc())
+
+    def _render_direct(self, data):
+        """Direct rendering for smaller datasets."""
+        # Clear existing rows
+        existing_children = self.tree.get_children()
+        self.tree.delete(*existing_children)
+
+        rows_added = 0
+        child_rows_added = 0
+        for row_data in data:
+            item_name = row_data.get("name", "")
+            containers = row_data.get("containers", {})
+            base_quantity = row_data.get("quantity", 0)
+
+            # Format quantity with change indicators
+            quantity_display = self._format_quantity_with_change(item_name, base_quantity)
+
+            values = [
+                item_name,
+                str(row_data.get("tier", "")),
+                quantity_display,
+                str(row_data.get("tag", "")),
+                f"{len(containers)} Containers" if len(containers) > 1 else next(iter(containers.keys()), "N/A"),
+            ]
+
+            # Apply color tags only to quantity column when there are changes
+            tags = []
+            if item_name in self.quantity_changes:
+                change = self.quantity_changes[item_name]
+                if change > 0:
+                    tags.append("quantity_increase")
+                elif change < 0:
+                    tags.append("quantity_decrease")
+
+            try:
+                if len(containers) > 1:
+                    item_id = self.tree.insert("", "end", values=values, tags=tags)
+                else:
+                    item_id = self.tree.insert("", "end", text="", values=values, open=False, tags=tags)
+                rows_added += 1
+
+                if len(containers) > 1:
+                    for container_name, quantity in containers.items():
+                        # Format container quantity with container-specific changes
+                        container_quantity_display = self._format_quantity_with_change(item_name, quantity, container_name)
+                        
+                        # Apply container-specific color tags when there are changes
+                        child_tags = ["child"]
+                        if (item_name in self.container_quantity_changes and 
+                            container_name in self.container_quantity_changes[item_name]):
+                            change = self.container_quantity_changes[item_name][container_name]
+                            if change > 0:
+                                child_tags.append("quantity_increase")
+                            elif change < 0:
+                                child_tags.append("quantity_decrease")
+                        
+                        child_values = [
+                            f"  └─ {item_name}",
+                            str(row_data.get("tier", "")),
+                            container_quantity_display,
+                            str(row_data.get("tag", "")),
+                            container_name,
+                        ]
+                        self.tree.insert(item_id, "end", text="", values=child_values, tags=child_tags)
+                        child_rows_added += 1
+
+            except Exception as e:
+                logging.error(f"[ClaimInventoryTab] Error adding row for {item_name}: {e}")
+
+        logging.debug(f"[ClaimInventoryTab] Direct render complete - added {rows_added} main rows, {child_rows_added} child rows")
     
     def _setup_column_headers(self):
         """Set up column headers and initial widths."""
@@ -750,5 +829,70 @@ class ClaimInventoryTab(ctk.CTkFrame):
 
     def destroy(self):
         """Clean up resources when tab is destroyed."""
-        # Call parent destroy
+        try:
+            self.optimization_shutdown()
+        except Exception as e:
+            logging.error(f"Error during optimization shutdown: {e}")
         super().destroy()
+
+    def _get_comparison_fields(self) -> List[str]:
+        """Get fields to compare for change detection."""
+        return ["name", "tier", "quantity", "tag", "containers"]
+
+    def _generate_item_key(self, item_data):
+        """Generate unique key for inventory items."""
+        key_tuple = (
+            item_data.get("name", "Unknown"),
+            item_data.get("tier", 0),
+        )
+        if key_tuple not in self._memory_manager["item_pool"]:
+            self._memory_manager["item_pool"][key_tuple] = "|".join(str(x) for x in key_tuple)
+        return self._memory_manager["item_pool"][key_tuple]
+
+    def _insert_tree_item(self, item_data):
+        """Insert inventory item into tree."""
+        item_name = item_data.get("name", "Unknown Item")
+        tier = item_data.get("tier", 0)
+        quantity = item_data.get("quantity", 0)
+        tag = item_data.get("tag", "")
+        containers = item_data.get("containers", {})
+
+        quantity_display = self._format_quantity_with_change(item_name, quantity)
+        
+        values = [
+            item_name,
+            str(tier),
+            quantity_display,
+            tag,
+            f"{len(containers)} Containers" if len(containers) > 1 else next(iter(containers.keys()), "N/A"),
+        ]
+
+        tags = []
+        if item_name in self.quantity_changes:
+            change = self.quantity_changes[item_name]
+            if change > 0:
+                tags.append("quantity_increase")
+            elif change < 0:
+                tags.append("quantity_decrease")
+
+        if len(containers) > 1:
+            item_id = self.tree.insert("", "end", values=values, tags=tags)
+            for container_name, container_quantity in containers.items():
+                container_quantity_display = self._format_quantity_with_change(item_name, container_quantity, container_name)
+                container_values = ["", "", container_quantity_display, "", container_name]
+                
+                container_tags = []
+                if (item_name in self.container_quantity_changes and 
+                    container_name in self.container_quantity_changes[item_name]):
+                    change = self.container_quantity_changes[item_name][container_name]
+                    if change > 0:
+                        container_tags.append("quantity_increase")
+                    elif change < 0:
+                        container_tags.append("quantity_decrease")
+                
+                self.tree.insert(item_id, "end", values=container_values, tags=container_tags)
+        else:
+            item_id = self.tree.insert("", "end", values=values, tags=tags)
+
+        item_key = self._generate_item_key(item_data)
+        self._ui_item_cache[item_key] = item_id

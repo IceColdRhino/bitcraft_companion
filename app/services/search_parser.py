@@ -24,7 +24,8 @@ class SearchParser:
     
     # Regex pattern to match keyword operators
     # Matches: field>=value, field<=value, field!=value, field>value, field<value, field=value
-    KEYWORD_PATTERN = re.compile(r'(\w+)(>=|<=|!=|>|<|=)([^\s]+)')
+    # Updated to handle OR (||) and AND (&) operators which may contain spaces
+    KEYWORD_PATTERN = re.compile(r'(\w+)(>=|<=|!=|>|<|=)([^\s]+(?:\s*(?:\|\||&)\s*[^\s]+)*)')
     
     # Define which fields are numeric for proper comparison handling
     NUMERIC_FIELDS = {
@@ -101,7 +102,7 @@ class SearchParser:
             'regular_terms': regular_terms
         }
     
-    def _process_value(self, field: str, value_str: str) -> Union[str, int, float]:
+    def _process_value(self, field: str, value_str: str) -> Union[str, int, float, dict]:
         """
         Process a search value based on the field type.
         
@@ -110,22 +111,47 @@ class SearchParser:
             value_str: The raw value string
             
         Returns:
-            Processed value (string, int, or float)
+            Processed value (string, int, float, or dict for OR/AND operations)
         """
-        # Check if this field should be treated as numeric
+        # Check for OR operator (||)
+        if '||' in value_str:
+            values = [v.strip() for v in value_str.split('||')]
+            processed_values = []
+            for v in values:
+                if field in self.NUMERIC_FIELDS:
+                    try:
+                        processed_values.append(float(v) if '.' in v else int(v))
+                    except ValueError:
+                        processed_values.append(v.lower())
+                else:
+                    processed_values.append(v.lower())
+            return {'type': 'or', 'values': processed_values}
+        
+        # Check for AND operator (&)
+        if '&' in value_str:
+            values = [v.strip() for v in value_str.split('&')]
+            processed_values = []
+            for v in values:
+                if field in self.NUMERIC_FIELDS:
+                    try:
+                        processed_values.append(float(v) if '.' in v else int(v))
+                    except ValueError:
+                        processed_values.append(v.lower())
+                else:
+                    processed_values.append(v.lower())
+            return {'type': 'and', 'values': processed_values}
+        
+        # Standard single value processing
         if field in self.NUMERIC_FIELDS:
             try:
-                # Try integer first, then float
                 if '.' in value_str:
                     return float(value_str)
                 else:
                     return int(value_str)
             except ValueError:
-                # If numeric conversion fails, treat as string
                 self.logger.warning(f"Failed to convert '{value_str}' to number for field '{field}', treating as string")
                 return value_str.lower()
         
-        # For string fields, convert to lowercase for case-insensitive matching
         return value_str.lower()
     
     def match_row(self, row: Dict[str, Any], parsed_query: Dict[str, Any]) -> bool:
@@ -183,14 +209,90 @@ class SearchParser:
         
         return False
     
-    def _compare_values(self, row_value: Any, operator: str, search_value: Union[str, int, float], field_name: str) -> bool:
+    def _compare_values(self, row_value: Any, operator: str, search_value: Union[str, int, float, dict], field_name: str) -> bool:
         """
         Compare a row value against a search value using the specified operator.
         
         Args:
             row_value: Value from the data row
             operator: Comparison operator (=, >, <, >=, <=, !=)
-            search_value: Value to compare against
+            search_value: Value to compare against (can be dict for OR/AND operations)
+            field_name: Name of the field being compared
+            
+        Returns:
+            True if comparison matches, False otherwise
+        """
+        try:
+            # Handle OR/AND operations
+            if isinstance(search_value, dict) and 'type' in search_value:
+                return self._handle_multi_value_comparison(row_value, operator, search_value, field_name)
+            
+            # Special handling for containers field
+            if field_name in ['containers', 'container'] and isinstance(row_value, dict):
+                return self._match_containers(row_value, operator, search_value)
+            
+            # Handle numeric comparisons
+            if isinstance(search_value, (int, float)):
+                row_numeric = self._convert_to_numeric(row_value)
+                if row_numeric is not None:
+                    return self._numeric_compare(row_numeric, operator, search_value)
+            
+            # Handle string comparisons
+            row_str = str(row_value).lower()
+            search_str = str(search_value).lower()
+            
+            if operator == '=':
+                return search_str in row_str
+            elif operator == '!=':
+                return search_str not in row_str
+            else:
+                # For non-= operators on strings, try numeric conversion
+                row_numeric = self._convert_to_numeric(row_value)
+                search_numeric = self._convert_to_numeric(search_value)
+                if row_numeric is not None and search_numeric is not None:
+                    return self._numeric_compare(row_numeric, operator, search_numeric)
+                # Fall back to string comparison for >, < on strings (alphabetical)
+                return self._string_compare(row_str, operator, search_str)
+                
+        except Exception as e:
+            self.logger.debug(f"Error comparing {row_value} {operator} {search_value}: {e}")
+            return False
+    
+    def _handle_multi_value_comparison(self, row_value: Any, operator: str, search_dict: dict, field_name: str) -> bool:
+        """
+        Handle OR and AND operations for multi-value search terms.
+        
+        Args:
+            row_value: Value from the data row
+            operator: Comparison operator
+            search_dict: Dict with 'type' ('or'/'and') and 'values' list
+            field_name: Name of the field being compared
+            
+        Returns:
+            True if condition matches, False otherwise
+        """
+        if search_dict['type'] == 'or':
+            # OR logic: any value must match
+            for value in search_dict['values']:
+                if self._compare_single_value(row_value, operator, value, field_name):
+                    return True
+            return False
+        elif search_dict['type'] == 'and':
+            # AND logic: all values must match
+            for value in search_dict['values']:
+                if not self._compare_single_value(row_value, operator, value, field_name):
+                    return False
+            return True
+        return False
+    
+    def _compare_single_value(self, row_value: Any, operator: str, search_value: Union[str, int, float], field_name: str) -> bool:
+        """
+        Compare a single value (used by multi-value operations).
+        
+        Args:
+            row_value: Value from the data row
+            operator: Comparison operator
+            search_value: Single value to compare against
             field_name: Name of the field being compared
             
         Returns:
@@ -225,7 +327,7 @@ class SearchParser:
                 return self._string_compare(row_str, operator, search_str)
                 
         except Exception as e:
-            self.logger.debug(f"Error comparing {row_value} {operator} {search_value}: {e}")
+            self.logger.debug(f"Error comparing single value {row_value} {operator} {search_value}: {e}")
             return False
     
     def _match_containers(self, containers: Dict[str, Any], operator: str, search_value: str) -> bool:
@@ -379,13 +481,13 @@ class SearchParser:
         Returns:
             List of suggested keyword examples
         """
-        base_suggestions = ['item=plank', 'tier>2', 'quantity<100']
+        base_suggestions = ['item=plank', 'tier>2', 'quantity<100', 'item=plank||lumber', 'item=refined&ore']
         
         if 'inventory' in tab_name.lower():
-            return base_suggestions + ['container=carving', 'tag=refined']
+            return base_suggestions + ['container=carving', 'tag=refined', 'container=workshop||carving']
         elif 'crafting' in tab_name.lower():
-            return base_suggestions + ['building=workshop', 'crafter=john', 'time<60']
+            return base_suggestions + ['building=workshop', 'crafter=john', 'time<60', 'item=log||plank||lumber']
         elif 'task' in tab_name.lower():
-            return base_suggestions + ['traveler=merchant', 'status=active']
+            return base_suggestions + ['traveler=merchant', 'status=active', 'status=active||pending']
         
         return base_suggestions

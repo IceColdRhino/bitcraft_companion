@@ -38,9 +38,6 @@ class SettingsWindow(ctk.CTkToplevel):
         # Load current settings
         self.settings = self._load_settings()
 
-        # Initialize notification service for test notifications
-        self.notification_service = NotificationService(self.app)
-
         # Get version information
         self.version_info = self._get_version_info()
 
@@ -58,6 +55,16 @@ class SettingsWindow(ctk.CTkToplevel):
         self._create_widgets()
 
         logging.info("Settings window opened")
+
+    def _get_notification_service(self):
+        """Get the main app's notification service."""
+        try:
+            if hasattr(self.app, "data_service") and self.app.data_service:
+                return self.app.data_service.notification_service
+            return None
+        except Exception as e:
+            logging.error(f"Error accessing notification service: {e}")
+            return None
 
     def _center_on_parent(self):
         """Center the settings window on the parent window."""
@@ -214,42 +221,174 @@ class SettingsWindow(ctk.CTkToplevel):
         self.export_button.pack(anchor="w", pady=(0, 8))
 
     def _create_notifications_section(self, parent):
-        """Create the notifications section."""
+        """Create the notifications section with sound customization."""
 
-        # Passive crafts toggle
-        self.passive_crafts_var = ctk.BooleanVar(value=self.settings.get("notifications", {}).get("passive_crafts_enabled", True))
-        passive_switch = ctk.CTkSwitch(
-            parent,
-            text="Passive Craft Notifications",
-            variable=self.passive_crafts_var,
+        # Create passive crafts section
+        self._create_notification_group(
+            parent, "Passive Craft Notifications", "passive_crafts_enabled", "passive_crafts_sound", "system_default"
+        )
+
+        # Create active crafts section
+        self._create_notification_group(
+            parent, "Active Craft Notifications", "active_crafts_enabled", "active_crafts_sound", "system_default"
+        )
+
+        # Create stamina recharged section
+        self._create_notification_group(
+            parent, "Stamina Recharged Notifications", "stamina_recharged_enabled", "stamina_recharged_sound", "system_default"
+        )
+
+    def _create_notification_group(self, parent, title, enabled_key, sound_key, default_sound):
+        """Create a notification group with toggle, sound dropdown, and test button."""
+
+        # Create container frame for this notification type
+        group_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        group_frame.pack(fill="x", pady=(0, 12))
+
+        # Toggle switch
+        enabled_var = ctk.BooleanVar(value=self.settings.get("notifications", {}).get(enabled_key, True))
+        setattr(self, f"{enabled_key}_var", enabled_var)
+
+        toggle_switch = ctk.CTkSwitch(
+            group_frame,
+            text=title,
+            variable=enabled_var,
             command=self._on_setting_change,
             font=ctk.CTkFont(size=13),
         )
-        passive_switch.pack(fill="x", anchor="w", pady=(0, 8))
+        toggle_switch.pack(anchor="w", pady=(0, 5))
 
-        # Active crafts toggle
-        self.active_crafts_var = ctk.BooleanVar(value=self.settings.get("notifications", {}).get("active_crafts_enabled", True))
-        active_switch = ctk.CTkSwitch(
-            parent,
-            text="Active Craft Notifications",
-            variable=self.active_crafts_var,
-            command=self._on_setting_change,
-            font=ctk.CTkFont(size=13),
+        # Sound selection container
+        sound_frame = ctk.CTkFrame(group_frame, fg_color="transparent")
+        sound_frame.pack(fill="x", padx=(20, 0), pady=(0, 0))
+
+        # Sound dropdown
+        sound_options = self._get_sound_options()
+        current_sound = self.settings.get("notifications", {}).get(sound_key, default_sound)
+        display_value = self._get_sound_display_value(current_sound)
+
+        # Ensure the display value is in the options list
+        if display_value not in sound_options:
+            logging.warning(f"Display value '{display_value}' not in options list {sound_options}, using first option")
+            display_value = sound_options[0] if sound_options else "None (Silent)"
+
+        sound_var = ctk.StringVar(value=display_value)
+        setattr(self, f"{sound_key}_var", sound_var)
+
+        sound_dropdown = ctk.CTkOptionMenu(
+            sound_frame,
+            variable=sound_var,
+            values=sound_options,
+            command=lambda value, key=sound_key: self._on_sound_change(key, value),
+            width=200,
+            height=28,
+            font=ctk.CTkFont(size=12),
         )
-        active_switch.pack(fill="x", anchor="w", pady=(0, 15))
+        sound_dropdown.pack(side="left", anchor="w")
 
-        # Test notification button (modular)
-        if self.settings.get("debug", {}).get("show_test_notification", True):
-            self.test_button = ctk.CTkButton(
-                parent,
-                text="Test Notification",
-                command=self._test_notification,
-                width=180,
-                height=32,
-                fg_color=get_color("STATUS_INFO"),
-                hover_color=get_color("BUTTON_HOVER"),
-            )
-            self.test_button.pack(anchor="w", pady=(0, 8))
+        # Test button with descriptive text
+        if sound_key == "passive_crafts_sound":
+            test_text = "Test Passive"
+        elif sound_key == "active_crafts_sound":
+            test_text = "Test Active"
+        elif sound_key == "stamina_recharged_sound":
+            test_text = "Test Stamina"
+        else:
+            test_text = "Test"
+
+        test_button = ctk.CTkButton(
+            sound_frame,
+            text=test_text,
+            command=lambda key=sound_key: self._test_sound(key),
+            width=80,
+            height=28,
+            font=ctk.CTkFont(size=11),
+            fg_color=get_color("STATUS_INFO"),
+            hover_color=get_color("BUTTON_HOVER"),
+        )
+        test_button.pack(side="left", padx=(8, 0), anchor="w")
+
+    def _get_sound_options(self):
+        """Get available sound options for dropdowns."""
+        options = ["None (Silent)", "System Default"]
+
+        # Get available sound files from notification service
+        notification_service = self._get_notification_service()
+        if notification_service:
+            available_sounds = notification_service.get_available_sounds()
+            for sound in available_sounds:
+                display_name = notification_service.get_sound_display_name(sound)
+                options.append(display_name)
+        else:
+            logging.warning("Notification service not available for sound options")
+
+        return options
+
+    def _get_sound_display_value(self, sound_filename):
+        """Convert sound filename to display value for dropdown."""
+        if not sound_filename or sound_filename == "none":
+            return "None (Silent)"
+        elif sound_filename == "system_default":
+            return "System Default"
+        else:
+            # Get display name from notification service
+            notification_service = self._get_notification_service()
+            if notification_service:
+                return notification_service.get_sound_display_name(sound_filename)
+            return sound_filename
+
+    def _get_sound_filename_from_display(self, display_value):
+        """Convert display value back to filename."""
+        if display_value == "None (Silent)":
+            return "none"
+        elif display_value == "System Default":
+            return "system_default"
+        else:
+            # Find the actual filename from available sounds
+            notification_service = self._get_notification_service()
+            if notification_service:
+                available_sounds = notification_service.get_available_sounds()
+                for sound in available_sounds:
+                    display_name = notification_service.get_sound_display_name(sound)
+                    if display_name == display_value:
+                        return sound
+            return display_value
+
+    def _on_sound_change(self, sound_key, display_value):
+        """Handle sound selection change."""
+        filename = self._get_sound_filename_from_display(display_value)
+
+        # Ensure notifications section exists
+        if "notifications" not in self.settings:
+            self.settings["notifications"] = {}
+
+        self.settings["notifications"][sound_key] = filename
+        self._save_settings()
+
+    def _test_sound(self, sound_key):
+        """Test notification with the specific notification type's current settings."""
+        try:
+            notification_service = self._get_notification_service()
+            if not notification_service:
+                logging.warning("Notification service not available for sound test")
+                return
+
+            # Update notification service with current settings from UI
+            self._save_settings()
+
+            # Show the appropriate test notification
+            if sound_key == "passive_crafts_sound":
+                notification_service.show_test_passive_craft_notification()
+            elif sound_key == "active_crafts_sound":
+                notification_service.show_test_active_craft_notification()
+            elif sound_key == "stamina_recharged_sound":
+                notification_service.show_test_stamina_notification()
+            else:
+                # Fallback to regular test
+                notification_service.show_test_notification()
+
+        except Exception as e:
+            logging.error(f"Error testing notification: {e}")
 
     def _create_theme_section(self, parent):
         """Create the theme selection section."""
@@ -384,7 +523,11 @@ class SettingsWindow(ctk.CTkToplevel):
             default_settings = {
                 "notifications": {
                     "passive_crafts_enabled": True,
+                    "passive_crafts_sound": "system_default",
                     "active_crafts_enabled": True,
+                    "active_crafts_sound": "system_default",
+                    "stamina_recharged_enabled": True,
+                    "stamina_recharged_sound": "system_default",
                 },
                 "debug": {"show_test_notification": True},
             }
@@ -405,7 +548,7 @@ class SettingsWindow(ctk.CTkToplevel):
                         else:
                             default_settings[category] = options
 
-                logging.info("Settings loaded from player_data.json")
+                logging.debug("Settings loaded from player_data.json")
 
             except FileNotFoundError:
                 logging.info("No player_data.json found, using default settings")
@@ -419,7 +562,14 @@ class SettingsWindow(ctk.CTkToplevel):
         except Exception as e:
             logging.error(f"Error loading settings: {e}")
             return {
-                "notifications": {"passive_crafts_enabled": True, "active_crafts_enabled": True},
+                "notifications": {
+                    "passive_crafts_enabled": True,
+                    "passive_crafts_sound": "system_default",
+                    "active_crafts_enabled": True,
+                    "active_crafts_sound": "system_default",
+                    "stamina_recharged_enabled": True,
+                    "stamina_recharged_sound": "system_default",
+                },
                 "debug": {"show_test_notification": True},
             }
 
@@ -427,10 +577,18 @@ class SettingsWindow(ctk.CTkToplevel):
         """Save settings to persistent storage."""
         try:
             # Update settings based on UI state (only if UI components exist)
-            if hasattr(self, "passive_crafts_var") and hasattr(self, "active_crafts_var"):
-                self.settings["notifications"]["passive_crafts_enabled"] = self.passive_crafts_var.get()
-                self.settings["notifications"]["active_crafts_enabled"] = self.active_crafts_var.get()
-            else:
+            if hasattr(self, "passive_crafts_enabled_var"):
+                self.settings["notifications"]["passive_crafts_enabled"] = self.passive_crafts_enabled_var.get()
+            if hasattr(self, "active_crafts_enabled_var"):
+                self.settings["notifications"]["active_crafts_enabled"] = self.active_crafts_enabled_var.get()
+            if hasattr(self, "stamina_recharged_enabled_var"):
+                self.settings["notifications"]["stamina_recharged_enabled"] = self.stamina_recharged_enabled_var.get()
+
+            if not (
+                hasattr(self, "passive_crafts_enabled_var")
+                or hasattr(self, "active_crafts_enabled_var")
+                or hasattr(self, "stamina_recharged_enabled_var")
+            ):
                 logging.warning("Settings UI components not yet initialized, skipping UI state update")
 
             # Send updated settings to notification service
@@ -440,7 +598,7 @@ class SettingsWindow(ctk.CTkToplevel):
                 and hasattr(self.app.data_service, "notification_service")
             ):
                 self.app.data_service.notification_service.update_settings(self.settings)
-                logging.info(f"Settings sent to notification service: {self.settings['notifications']}")
+                logging.debug(f"Settings sent to notification service: {self.settings['notifications']}")
             else:
                 logging.warning("Could not access notification service to update settings")
 
@@ -463,7 +621,7 @@ class SettingsWindow(ctk.CTkToplevel):
                 with open(file_path, "w") as f:
                     json.dump(player_data, f, indent=4)
 
-                logging.info("Settings saved to player_data.json")
+                logging.debug("Settings saved to player_data.json")
 
             except Exception as e:
                 logging.error(f"Error saving to player_data.json: {e}")
@@ -474,7 +632,7 @@ class SettingsWindow(ctk.CTkToplevel):
     def _on_setting_change(self):
         """Called when any setting changes."""
         self._save_settings()
-        logging.info("Settings updated")
+        logging.debug("Settings updated")
 
     def _on_theme_change(self, selected_display_name):
         """Handle theme selection change."""
@@ -490,7 +648,7 @@ class SettingsWindow(ctk.CTkToplevel):
             success = theme_manager.set_theme(theme_name)
 
             if success:
-                logging.info(f"Theme changed to: {theme_name}")
+                logging.debug(f"Theme changed to: {theme_name}")
             else:
                 logging.warning(f"Failed to change theme to: {theme_name}")
 
@@ -504,12 +662,12 @@ class SettingsWindow(ctk.CTkToplevel):
             self.refresh_button.configure(state="disabled", text="Refreshing...")
 
             # Request comprehensive data refresh from the data service
-            logging.info("[Settings] Refresh data button clicked - starting comprehensive refresh process")
+            logging.debug("[Settings] Refresh data button clicked - starting comprehensive refresh process")
             if hasattr(self.app, "data_service") and self.app.data_service:
                 logging.debug("[Settings] DataService found - calling refresh_all_data()")
                 success = self.app.data_service.refresh_all_data()
                 if success:
-                    logging.info("[Settings] Comprehensive data refresh completed successfully")
+                    logging.debug("[Settings] Comprehensive data refresh completed successfully")
                     # Show success message briefly
                     self.refresh_button.configure(text="Refreshed!")
                     self.after(1000, lambda: self.refresh_button.configure(state="normal", text="Refresh Data"))
@@ -534,7 +692,7 @@ class SettingsWindow(ctk.CTkToplevel):
             if hasattr(self.app, "claim_info") and self.app.claim_info:
                 # Call the existing export method in the claim_info_header
                 self.app.claim_info._export_data()
-                logging.info("Data export triggered from settings")
+                logging.debug("Data export triggered from settings")
             else:
                 logging.error("Claim info not available for data export")
                 messagebox.showerror("Export Error", "Unable to access claim information for export")
@@ -546,23 +704,32 @@ class SettingsWindow(ctk.CTkToplevel):
     def _test_notification(self):
         """Show a test notification."""
         try:
-            # Update notification service settings from UI (if UI components exist)
-            if hasattr(self, "passive_crafts_var") and hasattr(self, "active_crafts_var"):
+            # Update notification service settings from UI
+            if (
+                hasattr(self, "passive_crafts_enabled_var")
+                and hasattr(self, "active_crafts_enabled_var")
+                and hasattr(self, "stamina_recharged_enabled_var")
+            ):
                 notification_settings = {
-                    "passive_crafts_enabled": self.passive_crafts_var.get(),
-                    "active_crafts_enabled": self.active_crafts_var.get(),
+                    "passive_crafts_enabled": self.passive_crafts_enabled_var.get(),
+                    "active_crafts_enabled": self.active_crafts_enabled_var.get(),
+                    "stamina_recharged_enabled": self.stamina_recharged_enabled_var.get(),
                 }
             else:
                 # Use default settings if UI not initialized
                 notification_settings = {
                     "passive_crafts_enabled": True,
                     "active_crafts_enabled": True,
+                    "stamina_recharged_enabled": True,
                 }
-            self.notification_service.update_settings(notification_settings)
-
-            # Show test notification
-            self.notification_service.show_test_notification()
-            logging.info("Test notification triggered from settings")
+            notification_service = self._get_notification_service()
+            if notification_service:
+                notification_service.update_settings(notification_settings)
+                # Show test notification
+                notification_service.show_test_notification()
+            else:
+                logging.warning("Notification service not available for test notification")
+            logging.debug("Test notification triggered from settings")
 
         except Exception as e:
             logging.error(f"Error showing test notification: {e}")
@@ -573,7 +740,7 @@ class SettingsWindow(ctk.CTkToplevel):
         try:
             self._save_settings()
             self.destroy()
-            logging.info("Settings window closed")
+            logging.debug("Settings window closed")
 
         except Exception as e:
             logging.error(f"Error closing settings window: {e}")
@@ -590,11 +757,11 @@ class SettingsWindow(ctk.CTkToplevel):
             )
 
             if not result:  # User clicked "No" or closed dialog
-                logging.info("Logout cancelled by user")
+                logging.debug("Logout cancelled by user")
                 return
 
             # Perform logout
-            logging.info("User initiated logout from settings window")
+            logging.debug("User initiated logout from settings window")
 
             if hasattr(self.app, "data_service") and self.app.data_service:
                 # Clear credentials using the data service client
@@ -617,7 +784,7 @@ class SettingsWindow(ctk.CTkToplevel):
     def _quit_application(self):
         """Quits the application."""
         try:
-            logging.info("User initiated application quit from settings window")
+            logging.debug("User initiated application quit from settings window")
 
             # Close settings window first
             self.destroy()
@@ -662,9 +829,6 @@ class SettingsWindow(ctk.CTkToplevel):
             self.refresh_button.configure(fg_color=get_color("STATUS_INFO"), hover_color=get_color("BUTTON_HOVER"))
 
             self.export_button.configure(fg_color=get_color("STATUS_SUCCESS"), hover_color=get_color("STATUS_SUCCESS"))
-
-            if hasattr(self, "test_button"):
-                self.test_button.configure(fg_color=get_color("STATUS_INFO"), hover_color=get_color("BUTTON_HOVER"))
 
             # Force a visual refresh of the entire window
             self.update_idletasks()
