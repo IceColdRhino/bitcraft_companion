@@ -188,7 +188,8 @@ class MainWindow(ctk.CTk):
         logging.debug("Initializing tabs and UI components")
         self._create_tabs()
         self._create_tab_buttons()
-        self.show_tab("Claim Inventory")
+        # self.show_tab("Claim Inventory")
+        self.show_tab("Compare Jobs")
 
         # Ensure loading overlay is visible on top and lock tab buttons
         # Just show the overlay and set initial state
@@ -1537,6 +1538,11 @@ class MainWindow(ctk.CTk):
                 # Log data type and size for debugging
                 data_size = len(msg_data) if isinstance(msg_data, (dict, list)) else "unknown"
                 logging.debug(f"Processing message {message_count}: {msg_type} (data size: {data_size})")
+
+                self.received_data_types.add("inventory")
+                self.received_data_types.add("crafting")
+                self.received_data_types.add("active_crafting")
+                self.received_data_types.add("tasks")
 
                 if msg_type == "inventory_update":
                     if "Claim Inventory" in self.tabs:
