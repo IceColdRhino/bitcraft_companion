@@ -1548,6 +1548,26 @@ class CharacterStatsState:
         if isinstance(self.values, list) and 0 <= index < len(self.values):
             return float(self.values[index])
         return default
+    
+    def values_to_dict(self):
+        """Attempts to parse the Values field into a named dict."""
+        if isinstance(self.values, list) and len(self.values)==54:
+            stat_names = [
+                "max_health", "max_stamina", "passive_health_regen_rate", "passive_stamina_regen_rate", "movement_multiplier", "sprint_multiplier", "sprint_stamina_drain",
+                "armor", "cooldown_multiplier", "hunting_weapon_power", "strength", "cold_protection", "heat_protection", "evasion", "toolbelt_slots",
+                "crafting_speed", "gathering_speed", "building_speed", "satiation_regen_rate", "max_satiation", "defense_level",
+                "forestry_speed", "carpentry_speed", "masonry_speed", "mining_speed", "smithing_speed", "scholar_speed", "leatherworking_speed", "hunting_speed", "tailoring_speed", "farming_speed", "fishing_speed", "cooking_speed", "foraging_speed",
+                "forestry_power", "carpentry_power", "masonry_power", "mining_power", "smithing_power", "scholar_power", "leatherworking_power", "hunting_power", "tailoring_power", "farming_power", "fishing_power", "cooking_power", "foraging_power",
+                "active_health_regen_rate", "active_stamina_regen_rate", "climb_proficiency", "experience_rate", "accuracy", "max_teleportation_energy", "teleportation_energy_regen_rate",
+            ]
+            return dict(zip(stat_names,self.values))
+        else:
+            if not isinstance(self.values, list):
+                logging.error(f"[CharacterStatsState.values_to_dict] Expected list, got {type(self.values)}")
+            elif len(self.values) != 54:
+                # Maybe instead of fully erroring, if len>54 it just truncates the list?
+                # Then the app wouldn't necessarily need immediate maintenance in the case of an update
+                logging.error(f"[CharacterStatsState.values_to_dict] Expected list length 54, got {len(self.values)}")
 
 
 # ==============================================================================

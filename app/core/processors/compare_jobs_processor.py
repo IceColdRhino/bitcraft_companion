@@ -9,7 +9,7 @@ import logging
 import numpy as np
 from .base_processor import BaseProcessor
 from app.models import (
-    CharacterStatState,
+    CharacterStatsState,
     MarketOrderState,
 )
 
@@ -153,11 +153,14 @@ class CompareJobsProcessor(BaseProcessor):
 
                 # Handle character_stats_state transactions
                 elif table_name == "character_stats_state":
+                    if not hasattr(self, "_character_stats"):
+                        self._character_stats = {}
+
                     # Simply overwrite previous stat block
                     for insert_str in inserts:
                         data = json.loads(insert_str)
                         if data:
-                            self._character_stats = CharacterStatState.from_list(data[1])
+                            self._character_stats = CharacterStatsState.from_dict(data).values_to_dict()
                     if inserts or deletes:
                         has_compare_jobs_changes = True
 
@@ -272,8 +275,10 @@ class CompareJobsProcessor(BaseProcessor):
                 self._character_stats = {}
 
             for row in stat_rows:
-                values = row.get("values",[])
-                self._character_stats = CharacterStatState.from_list(values)
+                #values = row.get("values",[])
+                #self._character_stats = CharacterStatsState.from_list(values)
+                #self._character_stats = 54*[1]
+                self._character_stats = CharacterStatsState.from_dict(row).values_to_dict()
         
         except Exception as e:
             logging.error(f"Error processing character stat data: {e}")
@@ -321,7 +326,10 @@ class CompareJobsProcessor(BaseProcessor):
             raw_operations = []
 
             # Add crafting recipe info to list of raw_operations
-            craft_speed = self._character_stats.__dict__["crafting_speed"]
+            if self._character_stats:
+                craft_speed = self._character_stats.get("crafting_speed",1.0)
+            else:
+                craft_speed = 1.0
             job_type = "Craft"
             crafting_recipes = self.reference_data.get("crafting_recipe_desc", [])
             for recipe in crafting_recipes:
@@ -347,7 +355,10 @@ class CompareJobsProcessor(BaseProcessor):
                 job_level = self._level_convert(recipe["level_requirements"][0])
 
                 skill = job_level.split(':')[0].lower()
-                skill_speed = self._character_stats.__dict__.get(f"{skill}_speed",1.0)
+                if self._character_stats:
+                    skill_speed = self._character_stats.get(f"{skill}_speed",1.0)
+                else:
+                    skill_speed = 1.0
 
                 combined_speed = (craft_speed - 1)+skill_speed
                 # swing_speed is in [seconds/swing], as in the game
@@ -419,7 +430,10 @@ class CompareJobsProcessor(BaseProcessor):
 
             # Add extraction recipe info to list of raw_operations
             blacklist = self._get_gather_blacklist()
-            gather_speed = self._character_stats.__dict__["gathering_speed"]
+            if self._character_stats:
+                gather_speed = self._character_stats.get("gathering_speed",1.0)
+            else:
+                gather_speed = 1.0
             job_type = "Gather"
             extraction_recipes = self.reference_data.get("extraction_recipe_desc", [])
             for recipe in extraction_recipes:
@@ -443,7 +457,10 @@ class CompareJobsProcessor(BaseProcessor):
                 job_level = self._level_convert(recipe["level_requirements"][0])
 
                 skill = job_level.split(':')[0].lower()
-                skill_speed = self._character_stats.__dict__.get(f"{skill}_speed",1.0)
+                if self._character_stats:
+                    skill_speed = self._character_stats.get(f"{skill}_speed",1.0)
+                else:
+                    skill_speed = 1.0
 
                 # TODO: Get actual tool powers
                 # Temporary fallback value

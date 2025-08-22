@@ -293,12 +293,6 @@ class QueryService:
                 "FROM sell_order_state "
                 "WHERE sell_order_state.claim_entity_id = '{claim_id}';".format(claim_id=claim_id)
             ),
-            # Get the player's character stats (most importantly, skill speeds)
-            (
-                "SELECT character_stats_state.* "
-                "FROM character_stats_state "
-                "WHERE character_stats_state.entity_id = '{user_id}';".format(user_id=user_id)
-            ),
             # Get the player's equipped tool state
             (
                 "SELECT inventory_state.* "
