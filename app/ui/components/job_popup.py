@@ -11,7 +11,7 @@ class JobPopup(ctk.CTkToplevel):
         super().__init__(parent)
 
         self.title(job_data["job"])
-        self.geometry("350x500")
+        self.geometry("550x750")
 
         # Make window resizable
         self.resizable(True, True)
@@ -35,72 +35,98 @@ class JobPopup(ctk.CTkToplevel):
         self._create_widgets(job_data)
 
     def _create_widgets(self,job_data):
-        style = ttk.Style()
-        style.theme_use("default")
+        # Create the summary frame
+        self.summary_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.summary_frame.grid(row=0,column=0,sticky="nsew",padx=20,pady=10)
+        self._create_summary_section(self.summary_frame,job_data)
 
-        # Configure the Treeview colors
-        style.configure(
-            "Treeview",
-            background="#2a2d2e",
-            foreground="white",
-            fieldbackground="#343638",
-            borderwidth=0,
-            rowheight=28,
-            relief="flat",
+        # Create the input frame
+        self.input_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.input_frame.grid(row=1,column=0,sticky="nsew")
+        self._create_input_section(self.input_frame,job_data)
+
+        # Create the output frame
+        self.output_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.output_frame.grid(row=2,column=0,sticky="nsew")
+        self._create_output_section(self.output_frame,job_data)
+
+        self.grid_rowconfigure((0,1,2), weight=1)
+        self.grid_columnconfigure(0, weight=1)
+
+    def _create_summary_section(self,parent,job_data):
+        self.long_name = ctk.CTkLabel(
+            parent,
+            text=f"{job_data["long_name"]}",
+            font=ctk.CTkFont(size=14,weight="bold")
         )
-        style.map("Treeview", background=[("selected", "#1f6aa5")])
+        self.long_name.grid(row=0,column=0,rowspan=2,columnspan=5,sticky="nsew")
 
-        # Configure headers
-        style.configure(
-            "Treeview.Heading",
-            background="#1e2124",
-            foreground="#e0e0e0",
-            font=("Segoe UI", 11, "normal"),
-            padding=(8, 6),
-            relief="flat",
-            borderwidth=0,
+        self.effort = ctk.CTkLabel(
+            parent,
+            text=f"Total Effort:\n{np.round(job_data["effort"],2):,}",
         )
-        style.map("Treeview.Heading", background=[("active", "#2c5d8f")])
+        self.effort.grid(row=2,column=0,sticky="nsew")
 
-        # textbox = ctk.CTkTextbox(self)
-        # textbox.grid(row=0, column=0)
-        # text_str = ""
-        # for key in list(job_data.keys()):
-        #     text_str += f"{key}: {job_data[key]}\n"
-        # textbox.insert("0.0",text_str)
+        self.time = ctk.CTkLabel(
+            parent,
+            text=f"Total Time [s]:\n{np.round(job_data["time"],2):,}",
+        )
+        self.time.grid(row=2,column=2,sticky="nsew")
 
-        self.input_label = ctk.CTkLabel(self,text=f"{job_data["long_name"]}")
-        self.input_label.grid(row=0,column=0,columnspan=5)
+        self.stamina = ctk.CTkLabel(
+            parent,
+            text=f"Total Stamina:\n{np.round(job_data["stamina"],2):,}",
+        )
+        self.stamina.grid(row=2,column=4,sticky="nsew")
 
-        self.input_label = ctk.CTkLabel(self,text=f"Total Effort:\n{np.round(job_data["effort"],2)}")
-        self.input_label.grid(row=1,column=0,sticky="w")
+        self.power = ctk.CTkLabel(
+            parent,
+            text=f"Power:\n{np.round(job_data["total_power"],2)}",
+        )
+        self.power.grid(row=3,column=1,sticky="nsew")
 
-        self.input_label = ctk.CTkLabel(self,text=f"Total Time:\n{np.round(job_data["time"],2)}")
-        self.input_label.grid(row=1,column=2,sticky="w")
+        self.speed = ctk.CTkLabel(
+            parent,
+            text=f"Speed:\n{np.round(job_data["swing_speed"],3)}",
+        )
+        self.speed.grid(row=3,column=3,sticky="nsew")
 
-        self.input_label = ctk.CTkLabel(self,text=f"Total Stamina:\n{np.round(job_data["stamina"],2)}")
-        self.input_label.grid(row=1,column=4,sticky="w")
+        self.profit = ctk.CTkLabel(
+            parent,
+            text=f"Expected Profit:\n{np.round(job_data["profit"],2):,}",
+        )
+        self.profit.grid(row=4,column=1,sticky="nsew")
 
-        self.output_label = ctk.CTkLabel(self,text=" ")
-        self.output_label.grid(row=2,column=0,columnspan=5)
+        self.profit_rate = ctk.CTkLabel(
+            parent,
+            text=f"Expected Profit/min:\n{np.round(job_data["profit_per_min"],2):,}",
+        )
+        self.profit_rate.grid(row=4,column=3,sticky="nsew")
 
-        self.input_label = ctk.CTkLabel(self,text=f"Expected Profit:\n{np.round(job_data["profit"],2)}")
-        self.input_label.grid(row=4,column=1,sticky="w")
+        parent.grid_rowconfigure((0,1,2,3,4), weight=1)
+        parent.grid_columnconfigure((0,1,2,3,4,5), weight=1)
+    
+    def _create_input_section(self,parent,job_data):
+        self.input_header = ctk.CTkFrame(parent, fg_color="transparent")
+        self.input_header.pack(fill="x", padx=20, pady=0)
 
-        self.input_label = ctk.CTkLabel(self,text=f"Profit per Minute:\n{np.round(job_data["profit"],2)}")
-        self.input_label.grid(row=4,column=3,sticky="w")
+        self.input_label = ctk.CTkLabel(
+            self.input_header,
+            text="Inputs"
+            )
+        self.input_label.pack(side="left")
 
-        self.output_label = ctk.CTkLabel(self,text=" ")
-        self.output_label.grid(row=5,column=0,columnspan=5)
+        self.input_cost = ctk.CTkLabel(
+            self.input_header,
+            text=f"Expected Cost: {np.round(job_data["cost"],2):,}"
+            )
+        self.input_cost.pack(side="right")
 
-        self.input_label = ctk.CTkLabel(self,text="Inputs")
-        self.input_label.grid(row=6,column=0,columnspan=2,sticky="w")
-
-        self.input_label = ctk.CTkLabel(self,text=f"Expected Cost: {np.round(job_data["cost"],2)}")
-        self.input_label.grid(row=6,column=2,columnspan=3,sticky="w")
-
-        self.input_tree = ttk.Treeview(self,columns=self.table_headers,show="tree headings")
-        self.input_tree.grid(row=7,column=0,rowspan=1,columnspan=5,sticky="nesw")
+        self.input_tree = ttk.Treeview(
+            parent,
+            columns=self.table_headers,
+            show="tree headings"
+            )
         for header in self.table_headers:
             self.input_tree.heading(header, text=header, anchor="w")
             self.input_tree.column(header, width=self.column_widths.get(header, 100), minwidth=50, anchor="w")
@@ -108,18 +134,31 @@ class JobPopup(ctk.CTkToplevel):
         self.input_tree.heading("#0", text="", anchor="w")
         for entry in job_data["inputs"]:
             self.input_tree.insert("","end", values=entry)
+        
+        self.input_tree.pack(fill="both", expand=True, padx=0, pady=0)
 
-        self.output_label = ctk.CTkLabel(self,text=" ")
-        self.output_label.grid(row=10,column=0,columnspan=5)
+    def _create_output_section(self,parent,job_data):
+        self.output_header = ctk.CTkFrame(parent, fg_color="transparent")
+        self.output_header.pack(fill="x", padx=20, pady=0)
 
-        self.output_label = ctk.CTkLabel(self,text="Outputs")
-        self.output_label.grid(row=11,column=0,columnspan=2,sticky="w")
+        self.output_label = ctk.CTkLabel(
+            self.output_header,
+            text="Outputs"
+            )
+        self.output_label.pack(side="left")
 
-        self.output_label = ctk.CTkLabel(self,text=f"Expected Gross: {np.round(job_data["gross"],2)}")
-        self.output_label.grid(row=11,column=2,columnspan=3,sticky="w")
+        self.output_cost = ctk.CTkLabel(
+            self.output_header,
+            text=f"Expected Gross: {np.round(job_data["gross"],2):,}"
+            )
+        self.output_cost.pack(side="right")
 
-        self.output_tree = ttk.Treeview(self,columns=self.table_headers,show="tree headings")
-        self.output_tree.grid(row=12,column=0,rowspan=1,columnspan=5,sticky="nesw")
+        self.output_tree = ttk.Treeview(
+            parent,
+            columns=self.table_headers,
+            show="tree headings"
+            )
+
         for header in self.table_headers:
             self.output_tree.heading(header, text=header, anchor="w")
             self.output_tree.column(header, width=self.column_widths.get(header, 100), minwidth=50, anchor="w")
@@ -128,6 +167,4 @@ class JobPopup(ctk.CTkToplevel):
         for entry in job_data["outputs"]:
             self.output_tree.insert("","end", values=entry)
 
-        self.grid_rowconfigure((0,1,2,3,4,5,6,10,11),weight=1)
-        self.grid_rowconfigure((7,8,9,12,13,14),weight=1)
-        self.grid_columnconfigure((0,1,2,3,4), weight=1)
+        self.output_tree.pack(fill="both", expand=True, padx=0, pady=0)
