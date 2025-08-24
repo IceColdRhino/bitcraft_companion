@@ -127,6 +127,7 @@ class QueryService:
             "SELECT * FROM item_list_desc;",
             "SELECT * FROM item_desc;",
             "SELECT * FROM cargo_desc;",
+            "SELECT * FROM tool_desc;",
             "SELECT * FROM building_desc;",
             "SELECT * FROM building_function_type_mapping_desc;",
             "SELECT * FROM building_type_desc;",

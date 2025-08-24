@@ -9,8 +9,8 @@ import json
 import logging
 from .base_processor import BaseProcessor
 from app.models import (
-    ResourceDesc, ItemListDesc, ItemDesc, CargoDesc, BuildingDesc,
-    BuildingTypeDesc, CraftingRecipeDesc, ExtractionRecipeDesc,
+    ResourceDesc, ItemListDesc, ItemDesc, CargoDesc, ToolDesc,
+    BuildingDesc, BuildingTypeDesc, CraftingRecipeDesc, ExtractionRecipeDesc,
     ClaimTileCost, NpcDesc, BuildingFunctionTypeMappingDesc
 )
 
@@ -38,6 +38,7 @@ class ReferenceDataProcessor(BaseProcessor):
             "item_list_desc": ItemListDesc,
             "item_desc": ItemDesc, 
             "cargo_desc": CargoDesc,
+            "tool_desc": ToolDesc,
             "building_desc": BuildingDesc,
             "building_type_desc": BuildingTypeDesc,
             "crafting_recipe_desc": CraftingRecipeDesc,

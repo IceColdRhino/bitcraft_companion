@@ -10,6 +10,7 @@ import numpy as np
 from .base_processor import BaseProcessor
 from app.models import (
     CharacterStatsState,
+    InventoryState,
     MarketOrderState,
 )
 
@@ -35,6 +36,10 @@ class CompareJobsProcessor(BaseProcessor):
             ...
         """
         super().__init__(data_queue, services, reference_data)
+        try:
+            self.user_id = services.get("data_service").user_id
+        except:
+            self.user_id = None
         self.current_compare_jobs_data = []
 
     def get_table_names(self):
@@ -286,13 +291,24 @@ class CompareJobsProcessor(BaseProcessor):
     def _process_toolbelt_data(self, inventory_rows):
         """Process inventory_state data to store toolbelt info"""
         try:
+            if not self.user_id:
+                logging.warning("Unable to retrieve equipped tools - No user id available.")
+                return
+            
             if not hasattr(self, "_toolbelt_data"):
                 self._toolbelt_data = {}
 
+            tool_descs = self.reference_data.get("tool_desc", [])
             for row in inventory_rows:
-                if row["owner_entity_id"]==360287970202671962 and row["inventory_index"] == 1:
-                    logging.info(f"TEMP - Toolbelt Row: {row}")
-                    ...
+                if row["owner_entity_id"]==self.user_id and row["inventory_index"] == 1:
+                    inventory_state = InventoryState.from_dict(row)
+                    for equipped_tool in inventory_state.get_items():
+                        tool_desc = next((tool for tool in tool_descs if tool["item_id"] == equipped_tool["item_id"]), None)
+                        if tool_desc:
+                            self._toolbelt_data[tool_desc["tool_type"]] = {
+                                "level": tool_desc.get("level",1),
+                                "power": tool_desc.get("power",1),
+                                }
         except Exception as e:
             logging.error(f"Error processing toolbelt data: {e}")
 
@@ -300,6 +316,9 @@ class CompareJobsProcessor(BaseProcessor):
         """Send consolidated compare jobs update by combining all cached data."""
         try:
             if not (hasattr(self, "_character_stats") and self._character_stats):
+                return
+            
+            if not (hasattr(self, "_toolbelt_data") and self._toolbelt_data):
                 return
             
             # Consolidate compare jobs by job
@@ -357,17 +376,46 @@ class CompareJobsProcessor(BaseProcessor):
                 skill = job_level.split(':')[0].lower()
                 if self._character_stats:
                     skill_speed = self._character_stats.get(f"{skill}_speed",1.0)
+                    skill_power = self._character_stats.get(f"{skill}_power",0.0)
                 else:
                     skill_speed = 1.0
+                    skill_power = 0.0
 
                 combined_speed = (craft_speed - 1)+skill_speed
                 # swing_speed is in [seconds/swing], as in the game
                 swing_speed = recipe["time_requirement"]/combined_speed
 
-                # TODO: Get actual tool powers
-                # Temporary fallback value
-                tool_power = 27
-                skill_power = 0
+                # Get tool power for a given craft
+                job_tool = recipe["tool_requirements"]
+                job_hands = recipe["allow_use_hands"]
+
+                if len(job_tool) > 0 and self._toolbelt_data[job_tool[0][0]]:
+                    # Strict tool-required and held instances
+                    # TODO: Similar to skills, I want to get rid of the "first is only" assumption.
+                    tool_req = job_tool[0]
+                    tool_type = tool_req[0]
+                    tool_level_req = tool_req[1]
+                    tool_power_req = tool_req[2]
+                    if self._toolbelt_data[tool_type].get("level",1) < tool_level_req:
+                        # Omit jobs from the table for which the user doesn't have the needed tool level
+                        continue
+                    if self._toolbelt_data[tool_type].get("power",1) < tool_power_req:
+                        # Omit jobs from the table for which the user doesn't have the needed tool power
+                        continue
+                    tool_power = self._toolbelt_data[tool_type].get("power",1)
+                elif job_hands:
+                    # Fallback hand craft instances
+                    # TODO: Check this is actually the correct value
+                    tool_power = 1
+                elif len(job_tool) == 0 and not job_hands:
+                    # This makes no sense. But tool scrapping seems to fall into this bin.
+                    tool_power = 1
+                else:
+                    # If the conditions have reached this point,
+                    # the job can't be hand-crafted but the appropriate tool isn't equipped.
+                    # Omit the job from the list.
+                    continue
+
                 total_power = tool_power + skill_power
 
                 job_actions = recipe["actions_required"]
@@ -398,9 +446,7 @@ class CompareJobsProcessor(BaseProcessor):
                 job_pfm = 60*job_profit/job_time
 
                 job_building = recipe["building_requirement"]
-                job_tool = recipe["tool_requirements"]
                 job_xp = recipe["experience_per_progress"]
-                job_hands = recipe["allow_use_hands"]
 
                 raw_operation = {
                     "job_id": f"craft_{job_id}",
@@ -459,18 +505,45 @@ class CompareJobsProcessor(BaseProcessor):
                 skill = job_level.split(':')[0].lower()
                 if self._character_stats:
                     skill_speed = self._character_stats.get(f"{skill}_speed",1.0)
+                    skill_power = self._character_stats.get(f"{skill}_power",0.0)
                 else:
                     skill_speed = 1.0
-
-                # TODO: Get actual tool powers
-                # Temporary fallback value
-                tool_power = 27
-                skill_power = 0
-                total_power = tool_power + skill_power
+                    skill_power = 0.0
 
                 combined_speed = (gather_speed - 1)+skill_speed
                 # swing_speed is in [seconds/swing], as in the game
                 swing_speed = recipe["time_requirement"]/combined_speed
+
+                # TODO: Get actual tool powers
+                job_tool = recipe["tool_requirements"]
+                job_hands = recipe["allow_use_hands"]
+
+                if len(job_tool) > 0 and self._toolbelt_data[job_tool[0][0]]:
+                    # Strict tool-required and held instances
+                    # TODO: Similar to skills, I want to get rid of the "first is only" assumption.
+                    tool_req = job_tool[0]
+                    tool_type = tool_req[0]
+                    tool_level_req = tool_req[1]
+                    tool_power_req = tool_req[2]
+                    if self._toolbelt_data[tool_type].get("level",1) < tool_level_req:
+                        # Omit jobs from the table for which the user doesn't have the needed tool level
+                        continue
+                    if self._toolbelt_data[tool_type].get("power",1) < tool_power_req:
+                        # Omit jobs from the table for which the user doesn't have the needed tool power
+                        continue
+                    tool_power = self._toolbelt_data[tool_type].get("power",1)
+                elif job_hands:
+                    # Fallback hand gather instances
+                    # TODO: Check this is actually the correct value
+                    tool_power = 1
+                else:
+                    # If the conditions have reached this point,
+                    # the job can't be hand-gathered but the appropriate tool type isn't equipped.
+                    # Omit the job from the list.
+                    continue
+
+                # Temporary fallback value
+                total_power = tool_power + skill_power
 
                 # Default node extraction calculation
                 job_actions = resource["max_health"]
@@ -543,9 +616,7 @@ class CompareJobsProcessor(BaseProcessor):
                 job_passive = False
 
                 job_building = []
-                job_tool = []
                 job_xp = []
-                job_hands = False
                 
                 raw_operation = {
                     "job_id": f"extract_{job_id}",
@@ -587,18 +658,23 @@ class CompareJobsProcessor(BaseProcessor):
                 "extract_809093509": "extract_304798021",
             }
             for key in list(fish_map.keys()):
-                source = next(r for r in raw_operations if r["job_id"]==key)
-                target = next(r for r in raw_operations if r["job_id"]==fish_map[key])
-                source["time_requirement"] += target["time_requirement"]
-                source["stamina_requirement"] += target["stamina_requirement"]
-                source["tool_durability_lost"] += target["tool_durability_lost"]
-                source["output_stacks"] = target["output_stacks"]
-                source["actions_required"] += target["actions_required"]
-                source["total_power"] = target["total_power"]
-                source["swing_speed"] = target["swing_speed"]
-                source["gross"] = target["gross"]
-                source["profit"] = source["gross"] - source["cost"]
-                source["profit_per_min"] = 60*source["profit"]/source["time_requirement"]
+                try:
+                    source = next(r for r in raw_operations if r["job_id"]==key)
+                    target = next(r for r in raw_operations if r["job_id"]==fish_map[key])
+                    source["time_requirement"] += target["time_requirement"]
+                    source["stamina_requirement"] += target["stamina_requirement"]
+                    source["tool_durability_lost"] += target["tool_durability_lost"]
+                    source["output_stacks"] = target["output_stacks"]
+                    source["actions_required"] += target["actions_required"]
+                    source["total_power"] = target["total_power"]
+                    source["swing_speed"] = target["swing_speed"]
+                    source["gross"] = target["gross"]
+                    source["profit"] = source["gross"] - source["cost"]
+                    source["profit_per_min"] = 60*source["profit"]/source["time_requirement"]
+                except:
+                    # This exception just catches instances where the tool/level is under what's needed for the job
+                    # so the job got omitted and isn't inside raw_operations
+                    continue
 
             # Now build the hierarchy
             return self._build_hierarchy(raw_operations)

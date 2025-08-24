@@ -162,7 +162,7 @@ class ReferenceCacheService:
             
             # Expected reference tables
             expected_tables = {
-                'resource_desc', 'item_list_desc', 'item_desc', 'cargo_desc',
+                'resource_desc', 'item_list_desc', 'item_desc', 'cargo_desc', 'tool_desc',
                 'building_desc', 'building_function_type_mapping_desc', 'building_type_desc',
                 'crafting_recipe_desc', 'extraction_recipe_desc', 'claim_tile_cost', 'npc_desc'
             }

@@ -1841,7 +1841,30 @@ class CargoDesc:
             "blocks_path": self.blocks_path,
             "pickupable": not self.not_pickupable,
         }
+    
+@dataclass
+class ToolDesc:
+    """Tool description data from tool_desc table."""
 
+    id: int
+    item_id: int
+    tool_type: int
+    level: int
+    power: int
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "ToolDesc":
+        """Create ToolDesc from subscription data."""
+        if not isinstance(data, dict):
+            raise ValueError(f"Invalid tool_desc format: expected dict, got {type(data)}")
+
+        return cls(
+            id=data.get("id", 0),
+            item_id=data.get("item_id", 0),
+            tool_type=data.get("tool_type", 0),
+            level=data.get("level", 0),
+            power=data.get("power", 0),
+        )
 
 @dataclass
 class BuildingDesc:
