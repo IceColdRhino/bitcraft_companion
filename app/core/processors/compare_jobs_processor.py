@@ -396,12 +396,13 @@ class CompareJobsProcessor(BaseProcessor):
                     tool_type = tool_req[0]
                     tool_level_req = tool_req[1]
                     tool_power_req = tool_req[2]
-                    if self._toolbelt_data[tool_type].get("level",1) < tool_level_req:
-                        # Omit jobs from the table for which the user doesn't have the needed tool level
-                        continue
-                    if self._toolbelt_data[tool_type].get("power",1) < tool_power_req:
-                        # Omit jobs from the table for which the user doesn't have the needed tool power
-                        continue
+                    # TEMP COMMENT
+                    # if self._toolbelt_data[tool_type].get("level",1) < tool_level_req:
+                    #     # Omit jobs from the table for which the user doesn't have the needed tool level
+                    #     continue
+                    # if self._toolbelt_data[tool_type].get("power",1) < tool_power_req:
+                    #     # Omit jobs from the table for which the user doesn't have the needed tool power
+                    #     continue
                     tool_power = self._toolbelt_data[tool_type].get("power",1)
                 elif job_hands:
                     # Fallback hand craft instances
@@ -414,7 +415,9 @@ class CompareJobsProcessor(BaseProcessor):
                     # If the conditions have reached this point,
                     # the job can't be hand-crafted but the appropriate tool isn't equipped.
                     # Omit the job from the list.
-                    continue
+                    # TEMP COMMENT
+                    # continue
+                    tool_power = 1
 
                 total_power = tool_power + skill_power
 
@@ -514,7 +517,7 @@ class CompareJobsProcessor(BaseProcessor):
                 # swing_speed is in [seconds/swing], as in the game
                 swing_speed = recipe["time_requirement"]/combined_speed
 
-                # TODO: Get actual tool powers
+                # Get actual tool powers
                 job_tool = recipe["tool_requirements"]
                 job_hands = recipe["allow_use_hands"]
 
@@ -525,12 +528,13 @@ class CompareJobsProcessor(BaseProcessor):
                     tool_type = tool_req[0]
                     tool_level_req = tool_req[1]
                     tool_power_req = tool_req[2]
-                    if self._toolbelt_data[tool_type].get("level",1) < tool_level_req:
-                        # Omit jobs from the table for which the user doesn't have the needed tool level
-                        continue
-                    if self._toolbelt_data[tool_type].get("power",1) < tool_power_req:
-                        # Omit jobs from the table for which the user doesn't have the needed tool power
-                        continue
+                    # TEMP COMMENT
+                    # if self._toolbelt_data[tool_type].get("level",1) < tool_level_req:
+                    #     # Omit jobs from the table for which the user doesn't have the needed tool level
+                    #     continue
+                    # if self._toolbelt_data[tool_type].get("power",1) < tool_power_req:
+                    #     # Omit jobs from the table for which the user doesn't have the needed tool power
+                    #     continue
                     tool_power = self._toolbelt_data[tool_type].get("power",1)
                 elif job_hands:
                     # Fallback hand gather instances
@@ -540,7 +544,9 @@ class CompareJobsProcessor(BaseProcessor):
                     # If the conditions have reached this point,
                     # the job can't be hand-gathered but the appropriate tool type isn't equipped.
                     # Omit the job from the list.
-                    continue
+                    # TEMP COMMENT
+                    # continue
+                    tool_power = 1 # TEMP
 
                 # Temporary fallback value
                 total_power = tool_power + skill_power
@@ -956,6 +962,8 @@ class CompareJobsProcessor(BaseProcessor):
             # TODO: Calculate buy price from window
             #price = int(np.ceil((0.05*(window[1]-window[0])) + window[0]))
             price = window[1]
+            price = np.min([window[1],price])
+            price = np.max([window[0],price])
             row.append(price)
 
             # Calculate row's contribution to overall job value
@@ -1024,6 +1032,8 @@ class CompareJobsProcessor(BaseProcessor):
             # TODO: Better price calculation
             #price = int(np.floor((0.95*(window[1]-window[0])) + window[0]))
             price = window[1]-1
+            price = np.min([window[1],price])
+            price = np.max([window[0],price])
             row.append(price)
 
             # Calculate row's contribution to overall job value
@@ -1080,6 +1090,9 @@ class CompareJobsProcessor(BaseProcessor):
         else:
             logging.error(f"Unrecognized item, id: {item_id}, type array: {item_type}")
 
+        # TODO: Allow the user to specify their own preferred fallback values
+        buy_fallback = 0
+        sell_fallback = int(1e6)
 
         # TODO: Introduce conditions to allow for supply sale to claim?
         try:
@@ -1087,8 +1100,7 @@ class CompareJobsProcessor(BaseProcessor):
             buy_types = [b for b in buy_ids if b.item_type==item_type]
             max_buy = max(buy_types, key=lambda x:x.price_threshold).price_threshold
         except:
-            # TODO: Allow the user to specify their own preferred fallback value
-            max_buy = 0
+            max_buy = buy_fallback
 
         # TODO: Introduce conditions to allow for purchase of NPC products
         try:
@@ -1096,8 +1108,16 @@ class CompareJobsProcessor(BaseProcessor):
             sell_types = [s for s in sell_ids if s.item_type==item_type]
             min_sell = min(sell_types, key=lambda x:x.price_threshold).price_threshold
         except:
-            # TODO: Allow the user to specify their own preferred fallback value
-            min_sell = int(1e6)
+            min_sell = sell_fallback
+
+        if item_type == 0:
+            item = self.item_lookup_service.lookup_item_by_id(item_id,"item_desc")
+        elif item_type == 1:
+            item = self.item_lookup_service.lookup_item_by_id(item_id,"cargo_desc")
+
+        # Specify that recipes can't be bought or sold
+        if "Recipe: " in item["name"]:
+            max_buy=0;  min_sell=0
         
         return (max_buy, min_sell)
     
@@ -1115,5 +1135,10 @@ class CompareJobsProcessor(BaseProcessor):
         blacklist += [
             # Net fishing for shells
             1110004, 2110004, 3110004, 4110004, 5110004, 6110004,
+        ]
+        # Skill: Hunting
+        blacklist += [
+            # Gathering hexmoths
+            1095000,
         ]
         return blacklist
