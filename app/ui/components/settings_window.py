@@ -142,6 +142,10 @@ class SettingsWindow(ctk.CTkToplevel):
         # Configure grid for left alignment
         self.main_frame.grid_columnconfigure(0, weight=1)
 
+        # Market Strategy Section
+        strategy_content = self._create_card_section(self.main_frame, "Market Strategy")
+        self._create_strategy_section(strategy_content)
+
         # Account Section
         account_content = self._create_card_section(self.main_frame, "Account")
         self._create_account_section(account_content)
@@ -176,6 +180,209 @@ class SettingsWindow(ctk.CTkToplevel):
             hover_color=get_color("BUTTON_HOVER"),
         )
         self.close_button.pack(side="right")
+
+    def _create_strategy_section(self, parent):
+        """Create the market strategy section."""
+        
+        self._create_strat_group(
+            parent, "Buy", "buy_strat_value", "buy_strat_method"
+        )
+
+        self._create_strat_group(
+            parent, "Sell", "sell_strat_value", "sell_strat_method"
+        )
+
+        self._create_price_fallback_group(
+            parent, "Highest Buy", "buy_fallback_value"
+        )
+
+        self._create_price_fallback_group(
+            parent, "Lowest Sell", "sell_fallback_value"
+        )
+
+    def _create_strat_group(self,parent,strat_type, value_key, method_key):
+        """Create a market strategy group with label, input, and category dropdown."""
+        strat_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        strat_frame.pack(fill="x", pady=(0, 12))
+
+        strat_label = ctk.CTkLabel(
+            strat_frame,
+            text=f"{strat_type} at:",
+            )
+
+        strat_options = self._get_strat_options()
+        current_strat = self.settings.get("market_strategies", {}).get(method_key,"undercut")
+        display_value = self._get_strat_display_value(current_strat)
+
+        # TODO: Verify display value is in options list, and potentially format it.
+
+        strat_var = ctk.StringVar(value=display_value)
+        setattr(self, f"{method_key}_var", strat_var)
+
+        strat_dropdown = ctk.CTkOptionMenu(
+            strat_frame,
+            variable=strat_var,
+            values=strat_options,
+            command=lambda value, key=method_key: self._on_strat_method_change(key, value),
+            width=200,
+            height=28,
+            font=ctk.CTkFont(size=12),
+        )
+
+        # Set a default value based on the type of strategy
+        default_value = 0.0
+        if strat_type == "Buy":
+            if current_strat == "undercut":
+                default_value = 0
+            elif current_strat == "overbid":
+                default_value = 1
+            elif current_strat == "fractional":
+                default_value = 50
+        elif strat_type == "Sell":
+            if current_strat == "undercut":
+                default_value = 1
+            elif current_strat == "overbid":
+                default_value = 0
+            elif current_strat == "fractional":
+                default_value = 50
+
+        current_value = self.settings.get("market_strategies", {}).get(value_key,default_value)
+        value_var = ctk.StringVar(value=current_value)
+        setattr(self, f"{value_key}_var", value_var)
+        value_var.trace_add(
+            mode="write",
+            callback= lambda *args, key=value_key: self._on_market_strat_value_change(key,args),
+            )
+
+        value_entry = ctk.CTkEntry(
+            strat_frame,
+            textvariable=value_var,
+            width=50,
+            height=28,
+            font=ctk.CTkFont(size=12)
+        )
+
+        strat_label.pack(side="left", anchor="w")
+        value_entry.pack(side="left",anchor="e",padx=10)
+        strat_dropdown.pack(side="right", anchor="w")
+
+    def _get_strat_options(self):
+        """Get available strategy options for dropdowns."""
+        options = [
+                "coin(s) less than lowest sell order",
+                "coin(s) more than highest buy order",
+                "% from highest buy to lowest sell"
+                ]
+        # TODO: For the strategy to carry over to the table, I may need to make a strategy service...
+        # # Get available sound files from notification service
+        # notification_service = self._get_notification_service()
+        # if notification_service:
+        #     available_sounds = notification_service.get_available_sounds()
+        #     for sound in available_sounds:
+        #         display_name = notification_service.get_sound_display_name(sound)
+        #         options.append(display_name)
+        # else:
+        #     logging.warning("Notification service not available for sound options")
+
+        return options
+    
+    def _get_strat_display_value(self, strat_nickname):
+        """Convert strategy nickname to display value for dropdown."""
+        strat_dict = {
+            "undercut": "coin(s) less than lowest sell order",
+            "overbid": "coin(s) more than highest buy order",
+            "fractional": "% from highest buy to lowest sell",
+        }
+        # TODO: More evidence in favor of making a strategy service
+        # if not sound_filename or sound_filename == "none":
+        #     return "None (Silent)"
+        # elif sound_filename == "system_default":
+        #     return "System Default"
+        # else:
+        #     # Get display name from notification service
+        #     notification_service = self._get_notification_service()
+        #     if notification_service:
+        #         return notification_service.get_sound_display_name(sound_filename)
+        #     return sound_filename
+        return strat_dict.get(strat_nickname,"ERROR")
+    
+    def _get_strat_nickname_from_display(self,display_value):
+        """This function is just an inverse of the above function,
+        and therefore feels like it could be better accomplished in a different way..."""
+        strat_dict = {
+            "coin(s) less than lowest sell order": "undercut",
+            "coin(s) more than highest buy order": "overbid",
+            "% from highest buy to lowest sell": "fractional",
+        }
+        return strat_dict.get(display_value,"ERROR")
+    
+    def _on_strat_method_change(self, method_key, display_value):
+        """Handle strategy selection change."""
+        strat = self._get_strat_nickname_from_display(display_value)
+
+        # Ensure market strategies section exists
+        if "market_strategies" not in self.settings:
+            self.settings["market_strategies"] = {}
+
+        self.settings["market_strategies"][method_key] = strat
+        # TODO: Alter the entry widget value as a response to strat change
+        # Rather than independent method_key and value_key strings,
+        # maybe I need a single method_key that maps to (value, method) tuple?
+
+        self._save_settings()
+
+    def _on_market_strat_value_change(self,value_key,*args):
+        """Handle strategy/fallback value change."""
+        try:
+            # Yes, I realize this could just be gotten directly from args
+            # but I want the value_key anyways, so might as well
+            strat_value = getattr(self,f"{value_key}_var").get().lower()
+            strat_value = float(strat_value)
+
+            # Ensure market strategies section exists
+            if "market_strategies" not in self.settings:
+                self.settings["market_strategies"] = {}
+
+            self.settings["market_strategies"][value_key] = strat_value
+            self._save_settings()
+        except:
+            logging.warning("Unable to process value input.")
+    
+    def _create_price_fallback_group(self,parent,fallback_type,value_key):
+        """Create a price fallback group with label and input."""
+        price_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        price_frame.pack(fill="x", pady=(0, 12))
+
+        price_label = ctk.CTkLabel(
+            price_frame,
+            text=f"Fallback {fallback_type} Price:",
+            )
+
+        # Set a default value based on the type of fallback
+        default_value = 0
+        if fallback_type == "Highest Buy":
+            default_value = 0
+        elif fallback_type == "Lowest Sell":
+            default_value = int(1e6)
+
+        current_value = self.settings.get("market_strategies", {}).get(value_key,default_value)
+        value_var = ctk.StringVar(value=current_value)
+        setattr(self, f"{value_key}_var", value_var)
+        value_var.trace_add(
+            mode="write",
+            callback= lambda *args, key=value_key: self._on_market_strat_value_change(key,args),
+            )
+        
+        value_entry = ctk.CTkEntry(
+            price_frame,
+            textvariable=value_var,
+            width=100,
+            height=28,
+            font=ctk.CTkFont(size=12)
+        )
+
+        price_label.pack(side="left", anchor="w",padx=20)
+        value_entry.pack(side="left",padx=20)
 
     def _create_account_section(self, parent):
         """Create the account management section."""
@@ -529,6 +736,14 @@ class SettingsWindow(ctk.CTkToplevel):
                     "stamina_recharged_enabled": True,
                     "stamina_recharged_sound": "system_default",
                 },
+                "market_strategies": {
+                    "buy_strat_method": "fractional",
+                    "sell_strat_method": "undercut",
+                    "buy_strat_value": 5.0,
+                    "sell_strat_value": 1.0,
+                    "sell_fallback_value": 1000000.0,
+                    "buy_fallback_value": 0.0
+                    },
                 "debug": {"show_test_notification": True},
             }
 

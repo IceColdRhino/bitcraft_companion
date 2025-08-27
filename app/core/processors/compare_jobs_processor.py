@@ -8,6 +8,7 @@ import time
 import logging
 import numpy as np
 from .base_processor import BaseProcessor
+from ...core.data_paths import get_user_data_path
 from app.models import (
     CharacterStatsState,
     InventoryState,
@@ -36,10 +37,15 @@ class CompareJobsProcessor(BaseProcessor):
             ...
         """
         super().__init__(data_queue, services, reference_data)
+
+        # Load user id to get currently equipped tools
         try:
             self.user_id = services.get("data_service").user_id
         except:
             self.user_id = None
+        
+        # Is this even needed? Seems like no?
+        # I just copy-pasted it from a different init and changed the variable name...
         self.current_compare_jobs_data = []
 
     def get_table_names(self):
@@ -68,7 +74,7 @@ class CompareJobsProcessor(BaseProcessor):
                 inserts = update.get("inserts", [])
                 deletes = update.get("deletes", [])
 
-                # TODO: Handle buy_order_state transactions
+                # Handle buy_order_state transactions
                 if table_name == "buy_order_state":
                     # Initialize _buy_orders if it doesn't exist
                     if not hasattr(self, "_buy_orders"):
@@ -112,7 +118,7 @@ class CompareJobsProcessor(BaseProcessor):
                     if inserts or deletes:
                         has_compare_jobs_changes = True
 
-                # TODO: Handle sell_order_state transactions
+                # Handle sell_order_state transactions
                 elif table_name == "sell_order_state":
                     # Initialize _sell_orders if it doesn't exist
                     if not hasattr(self, "_sell_orders"):
@@ -157,6 +163,7 @@ class CompareJobsProcessor(BaseProcessor):
                         has_compare_jobs_changes = True
 
                 # Handle character_stats_state transactions
+                # TODO: This is broken, need to fix it
                 elif table_name == "character_stats_state":
                     if not hasattr(self, "_character_stats"):
                         self._character_stats = {}
@@ -272,17 +279,11 @@ class CompareJobsProcessor(BaseProcessor):
 
     def _process_character_stat_data(self,stat_rows):
         """Process character_stats_state data to store character stat info"""
-        # TODO: Handle character stat data
-        # Look up Character State Type bindings to find meaning of "Values" field
-        # Generally, there's good Speed info here but not good Power info
         try:
             if not hasattr(self,"_character_stats"):
                 self._character_stats = {}
 
             for row in stat_rows:
-                #values = row.get("values",[])
-                #self._character_stats = CharacterStatsState.from_list(values)
-                #self._character_stats = 54*[1]
                 self._character_stats = CharacterStatsState.from_dict(row).values_to_dict()
         
         except Exception as e:
@@ -320,6 +321,9 @@ class CompareJobsProcessor(BaseProcessor):
             
             if not (hasattr(self, "_toolbelt_data") and self._toolbelt_data):
                 return
+            
+            # Load current settings for buy/sell strategies
+            self.settings = self._load_settings()
             
             # Consolidate compare jobs by job
             consolidated_jobs = self._consolidate_compare_jobs()
@@ -396,13 +400,12 @@ class CompareJobsProcessor(BaseProcessor):
                     tool_type = tool_req[0]
                     tool_level_req = tool_req[1]
                     tool_power_req = tool_req[2]
-                    # TEMP COMMENT
-                    # if self._toolbelt_data[tool_type].get("level",1) < tool_level_req:
-                    #     # Omit jobs from the table for which the user doesn't have the needed tool level
-                    #     continue
-                    # if self._toolbelt_data[tool_type].get("power",1) < tool_power_req:
-                    #     # Omit jobs from the table for which the user doesn't have the needed tool power
-                    #     continue
+                    if self._toolbelt_data[tool_type].get("level",1) < tool_level_req:
+                        # Omit jobs from the table for which the user doesn't have the needed tool level
+                        continue
+                    if self._toolbelt_data[tool_type].get("power",1) < tool_power_req:
+                        # Omit jobs from the table for which the user doesn't have the needed tool power
+                        continue
                     tool_power = self._toolbelt_data[tool_type].get("power",1)
                 elif job_hands:
                     # Fallback hand craft instances
@@ -415,9 +418,7 @@ class CompareJobsProcessor(BaseProcessor):
                     # If the conditions have reached this point,
                     # the job can't be hand-crafted but the appropriate tool isn't equipped.
                     # Omit the job from the list.
-                    # TEMP COMMENT
-                    # continue
-                    tool_power = 1
+                    continue
 
                 total_power = tool_power + skill_power
 
@@ -478,7 +479,6 @@ class CompareJobsProcessor(BaseProcessor):
                 raw_operations.append(raw_operation)
 
             # Add extraction recipe info to list of raw_operations
-            blacklist = self._get_gather_blacklist()
             if self._character_stats:
                 gather_speed = self._character_stats.get("gathering_speed",1.0)
             else:
@@ -490,9 +490,6 @@ class CompareJobsProcessor(BaseProcessor):
                 # In the current state of the game, I only care about extractions from resources
                 # not extractions from cargos
                 if recipe["resource_id"]==0 or recipe["cargo_id"]!=0:
-                    continue
-
-                if job_id in blacklist:
                     continue
 
                 resource = self.item_lookup_service.lookup_item_by_id(recipe["resource_id"],"resource_desc")
@@ -528,13 +525,12 @@ class CompareJobsProcessor(BaseProcessor):
                     tool_type = tool_req[0]
                     tool_level_req = tool_req[1]
                     tool_power_req = tool_req[2]
-                    # TEMP COMMENT
-                    # if self._toolbelt_data[tool_type].get("level",1) < tool_level_req:
-                    #     # Omit jobs from the table for which the user doesn't have the needed tool level
-                    #     continue
-                    # if self._toolbelt_data[tool_type].get("power",1) < tool_power_req:
-                    #     # Omit jobs from the table for which the user doesn't have the needed tool power
-                    #     continue
+                    if self._toolbelt_data[tool_type].get("level",1) < tool_level_req:
+                        # Omit jobs from the table for which the user doesn't have the needed tool level
+                        continue
+                    if self._toolbelt_data[tool_type].get("power",1) < tool_power_req:
+                        # Omit jobs from the table for which the user doesn't have the needed tool power
+                        continue
                     tool_power = self._toolbelt_data[tool_type].get("power",1)
                 elif job_hands:
                     # Fallback hand gather instances
@@ -544,11 +540,7 @@ class CompareJobsProcessor(BaseProcessor):
                     # If the conditions have reached this point,
                     # the job can't be hand-gathered but the appropriate tool type isn't equipped.
                     # Omit the job from the list.
-                    # TEMP COMMENT
-                    # continue
-                    tool_power = 1 # TEMP
-
-                # Temporary fallback value
+                    continue
                 total_power = tool_power + skill_power
 
                 # Default node extraction calculation
@@ -840,7 +832,6 @@ class CompareJobsProcessor(BaseProcessor):
         super().clear_cache()
 
         # Clear claim-specific cached data
-        # TODO: Clear cached data
         if hasattr(self, "_buy_orders"):
             self._buy_orders.clear()
 
@@ -959,11 +950,7 @@ class CompareJobsProcessor(BaseProcessor):
             row.append(window)
 
             # Calculate price to procure materials
-            # TODO: Calculate buy price from window
-            #price = int(np.ceil((0.05*(window[1]-window[0])) + window[0]))
-            price = window[1]
-            price = np.min([window[1],price])
-            price = np.max([window[0],price])
+            price = self._get_sale_price(window,"buy")
             row.append(price)
 
             # Calculate row's contribution to overall job value
@@ -1029,11 +1016,7 @@ class CompareJobsProcessor(BaseProcessor):
             row.append(window)
 
             # Calculate price to liquidate materials
-            # TODO: Better price calculation
-            #price = int(np.floor((0.95*(window[1]-window[0])) + window[0]))
-            price = window[1]-1
-            price = np.min([window[1],price])
-            price = np.max([window[0],price])
+            price = self._get_sale_price(window,"sell")
             row.append(price)
 
             # Calculate row's contribution to overall job value
@@ -1090,9 +1073,8 @@ class CompareJobsProcessor(BaseProcessor):
         else:
             logging.error(f"Unrecognized item, id: {item_id}, type array: {item_type}")
 
-        # TODO: Allow the user to specify their own preferred fallback values
-        buy_fallback = 0
-        sell_fallback = int(1e6)
+        buy_fallback = self.settings.get("market_strategies",{}).get("buy_fallback_value",0)
+        sell_fallback = self.settings.get("market_strategies",{}).get("sell_fallback_value",1e6)
 
         # TODO: Introduce conditions to allow for supply sale to claim?
         try:
@@ -1121,24 +1103,116 @@ class CompareJobsProcessor(BaseProcessor):
         
         return (max_buy, min_sell)
     
-    def _get_craft_blacklist(self):
-        """Returns a list of crafting recipe ids to omit from the table"""
-        blacklist = []
-        blacklist += [
-        ]
-        return blacklist
+    def _get_sale_price(self,price_window,sale_method):
+        """Return a transaction price based on the price window, transaction type, and user strategy settings."""
+        # This comes across as needlessly verbose and redundant
+        # but there's enough small differences in default values, order of operations, and rounding
+        # that this seemed simplest at the time.
+        try:
+            strat = "No Strategy"
+            if sale_method == "buy":
+                strat = self.settings.get("market_strategies",{}).get("buy_strat_method","undercut")
+                if strat == "undercut":
+                    value = self.settings.get("market_strategies",{}).get("buy_strat_value",1.0)
+                    price = price_window[1]-value
+                elif strat == "overbid":
+                    value = self.settings.get("market_strategies",{}).get("buy_strat_value",0.0)
+                    price = price_window[0]+value
+                elif strat == "fractional":
+                    value = self.settings.get("market_strategies",{}).get("buy_strat_value",50)
+                    price = ((price_window[1]-price_window[0])*value/100.0) + price_window[0]
+                else:
+                    raise ValueError
+                
+                price = np.min([price_window[1],price])
+                price = np.max([price_window[0],price])
+                return int(np.ceil(price))
+            elif sale_method == "sell":
+                strat = self.settings.get("market_strategies",{}).get("sell_strat_method","fractional")
+                if strat == "undercut":
+                    value = self.settings.get("market_strategies",{}).get("sell_strat_value",0.0)
+                    price = price_window[1]-value
+                elif strat == "overbid":
+                    value = self.settings.get("market_strategies",{}).get("sell_strat_value",1.0)
+                elif strat == "fractional":
+                    value = self.settings.get("market_strategies",{}).get("sell_strat_value",50)
+                else:
+                    raise ValueError
+                
+                price = np.max([price_window[0],price])
+                price = np.min([price_window[1],price])
+                return int(np.floor(price))
+            else:
+                raise ValueError
+        except:
+            logging.error("Unable to process {strat} - {sale_method} transaction with price window: {price_window}.")
+    
+    
+    def _load_settings(self):
+        """Load settings with default values."""
+        # TODO: Remove redundancy
+        # Currently, this is just a direct copy-paste from settings_window.py
+        # It would be better to reference a single common true method,
+        # but I couldn't find a way to call the function from SettingsWindow
+        # without instancing a whole new window popup
+        try:
+            # Default settings structure
+            default_settings = {
+                "notifications": {
+                    "passive_crafts_enabled": True,
+                    "passive_crafts_sound": "system_default",
+                    "active_crafts_enabled": True,
+                    "active_crafts_sound": "system_default",
+                    "stamina_recharged_enabled": True,
+                    "stamina_recharged_sound": "system_default",
+                },
+                "market_strategies": {
+                    "buy_strat_method": "fractional",
+                    "sell_strat_method": "undercut",
+                    "buy_strat_value": 5.0,
+                    "sell_strat_value": 1.0,
+                    "sell_fallback_value": 1000000.0,
+                    "buy_fallback_value": 0.0
+                    },
+                "debug": {"show_test_notification": True},
+            }
 
-    def _get_gather_blacklist(self):
-        """Returns a list of extraction recipe ids to omit from the table"""
-        blacklist = []
-        # Skill: Fishing
-        blacklist += [
-            # Net fishing for shells
-            1110004, 2110004, 3110004, 4110004, 5110004, 6110004,
-        ]
-        # Skill: Hunting
-        blacklist += [
-            # Gathering hexmoths
-            1095000,
-        ]
-        return blacklist
+            # Load from player_data.json
+            try:
+                file_path = get_user_data_path("player_data.json")
+                with open(file_path, "r") as f:
+                    player_data = json.load(f)
+
+                # Extract settings from player_data, merge with defaults
+                saved_settings = player_data.get("settings", {})
+                if saved_settings:
+                    # Deep merge: update defaults with saved settings
+                    for category, options in saved_settings.items():
+                        if category in default_settings and isinstance(options, dict):
+                            default_settings[category].update(options)
+                        else:
+                            default_settings[category] = options
+
+                logging.debug("Settings loaded from player_data.json")
+
+            except FileNotFoundError:
+                logging.info("No player_data.json found, using default settings")
+            except json.JSONDecodeError:
+                logging.warning("player_data.json is malformed, using default settings")
+            except Exception as e:
+                logging.error(f"Error reading player_data.json: {e}, using defaults")
+
+            return default_settings
+        except Exception as e:
+            logging.error(f"Error loading settings: {e}")
+            return {
+                "notifications": {
+                    "passive_crafts_enabled": True,
+                    "passive_crafts_sound": "system_default",
+                    "active_crafts_enabled": True,
+                    "active_crafts_sound": "system_default",
+                    "stamina_recharged_enabled": True,
+                    "stamina_recharged_sound": "system_default",
+                },
+                "debug": {"show_test_notification": True},
+            }

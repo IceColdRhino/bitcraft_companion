@@ -10,8 +10,7 @@ class JobPopup(ctk.CTkToplevel):
     def __init__(self, parent, cell, job_data,):# current_selection, callback, custom_key=None):
         super().__init__(parent)
 
-        #self.title(job_data["job"])
-        self.title(job_data["job_id"])
+        self.title(job_data["job"])
         self.geometry("550x750")
 
         # Make window resizable
