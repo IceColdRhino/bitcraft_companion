@@ -2487,30 +2487,11 @@ class ItemListDesc:
     def to_dict(self) -> dict:
         """Convert to dictionary format for backward compatibility."""
         return {
-            "entity_id": self.entity_id,
-            "player_entity_id": self.entity_id,  # Include both for compatibility
-            "stamina": self.stamina,
-            "current": self.stamina,  # Backward compatibility
-            "last_stamina_decrease_timestamp": self.last_stamina_decrease_timestamp,
+            "id": self.id,
+            "name": self.name,
+            "possibilities": self.possibilities
         }
 
-    def is_full(self, max_stamina: float = 300.0) -> bool:
-        """Check if stamina is at maximum (default max 300)."""
-        return self.stamina >= max_stamina
-
-    def get_percentage(self, max_stamina: float = 300.0) -> float:
-        """Get stamina as percentage of maximum (default max 300)."""
-        if max_stamina <= 0:
-            return 0.0
-        return (self.stamina / max_stamina) * 100.0
-
-    def is_low(self, max_stamina: float = 300.0, threshold: float = 20.0) -> bool:
-        """Check if stamina is below threshold percentage."""
-        return self.get_percentage(max_stamina) < threshold
-
-    def get_timestamp_seconds(self) -> float:
-        """Convert timestamp from microseconds to seconds."""
-        return self.last_stamina_decrease_timestamp / 1_000_000.0
     
 @dataclass
 class ClaimTechDesc:

@@ -291,7 +291,9 @@ class ItemLookupService:
                 preferred_item_with_source = preferred_item.copy()
                 preferred_item_with_source['_source_table'] = preferred_source
                 preferred_items.append(preferred_item_with_source)
-                logging.debug(f"ItemLookupService: Found {preferred_source} item {item_id}: '{preferred_item.get('name', 'Unknown')}'")
+                # Commented this out because it made for a very verbose log,
+                # and writing the log seemed to slow things down
+                #logging.debug(f"ItemLookupService: Found {preferred_source} item {item_id}: '{preferred_item.get('name', 'Unknown')}'")
             
             # Then look for other sources
             for source in ["item_desc", "cargo_desc", "resource_desc"]:
