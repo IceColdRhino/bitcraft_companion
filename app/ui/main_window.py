@@ -193,8 +193,8 @@ class MainWindow(ctk.CTk, SearchableWindowMixin):
         logging.debug("Initializing tabs and UI components")
         self._create_tabs()
         self._create_tab_buttons()
-        self.show_tab("Claim Inventory")
-        # self.show_tab("Compare Jobs")
+        # self.show_tab("Claim Inventory")
+        self.show_tab("Compare Jobs")
         # TEMP - Used for convenience/turnaround on development
 
         # Enable immediate tab navigation - no blocking startup
@@ -1624,10 +1624,7 @@ class MainWindow(ctk.CTk, SearchableWindowMixin):
                 logging.info(f"[MAIN WINDOW] Processing message {message_count}: {msg_type} (data size: {data_size})")
 
                 # TEMP - Used for disabling some laggy queries
-                # self.received_data_types.add("inventory")
-                # self.received_data_types.add("crafting")
-                # self.received_data_types.add("active_crafting")
-                # self.received_data_types.add("tasks")
+                self.received_data_types.add("crafting")
 
                 if msg_type == "inventory_update":
                     logging.info(f"[MAIN WINDOW] Received inventory_update message with {len(msg_data) if isinstance(msg_data, dict) else 'unknown'} items")

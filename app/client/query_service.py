@@ -278,13 +278,13 @@ class QueryService:
                 "ON public_progressive_action_state.building_entity_id = building_state.entity_id "
                 "WHERE building_state.claim_entity_id = '{claim_id}';".format(claim_id=claim_id)
             ),
-            # Get passive crafting state for buildings in the claim
-            (
-                "SELECT passive_craft_state.* "
-                "FROM passive_craft_state "
-                "JOIN building_state ON passive_craft_state.building_entity_id = building_state.entity_id "
-                "WHERE building_state.claim_entity_id = '{claim_id}';".format(claim_id=claim_id)
-            ),
+            # # Get passive crafting state for buildings in the claim
+            # (
+            #     "SELECT passive_craft_state.* "
+            #     "FROM passive_craft_state "
+            #     "JOIN building_state ON passive_craft_state.building_entity_id = building_state.entity_id "
+            #     "WHERE building_state.claim_entity_id = '{claim_id}';".format(claim_id=claim_id)
+            # ),
             # Get claim tech state for the claim
             (
                 "SELECT claim_tech_state.* "
