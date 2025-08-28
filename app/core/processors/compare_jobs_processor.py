@@ -1170,7 +1170,6 @@ class CompareJobsProcessor(BaseProcessor):
         except:
             max_buy = buy_fallback
 
-        # TODO: Introduce conditions to allow for purchase of NPC products
         try:
             sell_ids = [s for s in self._sell_orders.values() if s.item_id==item_id]
             sell_types = [s for s in sell_ids if s.item_type==item_type]
@@ -1178,14 +1177,65 @@ class CompareJobsProcessor(BaseProcessor):
         except:
             min_sell = sell_fallback
 
+        # Special handling hard-coding
+        # A lot of this could probably be handled with traveler_trade_order_desc, but, alas
         if item_type == 0:
             item = self.item_lookup_service.lookup_item_by_id(item_id,"item_desc")
+            if "Recipe: " in item["name"]:
+                # Specify that recipes can't be bought or sold
+                max_buy=0;  min_sell=0
+            elif item_id == 1:
+                # Hex coins have a "price" floor and cap
+                max_buy=np.max([1,max_buy]);  min_sell = np.min([1,min_sell])
+            elif item_id == 4000:
+                # Cooling Energy price cap
+                min_sell = np.min([min_sell,1000])
+            elif item_id == 4001:
+                # Warming Energy price cap
+                min_sell = np.min([min_sell,2500])
+            elif item_id == 4002:
+                # Ripped Notes price cap
+                min_sell = np.min([min_sell,1000])
+            elif item_id == 4003:
+                # Shredded Notes price cap
+                min_sell = np.min([min_sell,2500])
+            elif item_id == 72520590:
+                # Heart Wiring price cap
+                min_sell = np.min([min_sell,500])
+            elif item_id == 148829439:
+                # Owl Egg price cap
+                min_sell = np.min([min_sell,1000])
+            elif item_id == 805422378:
+                # Metalworking Flux fixed price (not able to be put on market)
+                max_buy=10;  min_sell = 10
+            elif item_id == 1009634974:
+                # Conductive Frame price cap
+                min_sell = np.min([min_sell,10000])
+            elif item_id == 1223093023:
+                # Hideworking Salt fixed price (not able to be put on market)
+                max_buy=10;  min_sell = 10
+            elif item_id == 1463057734:
+                # Clothmaker's Mordant fixed price (not able to be put on market)
+                max_buy=10;  min_sell = 10
+            elif item_id == 1763886534:
+                # Woodworking Sandpaper fixed price (not able to be put on market)
+                max_buy=2;  min_sell = 2
+            elif item_id == 1857742253:
+                # Brickworking Binding Ash fixed price (not able to be put on market)
+                max_buy=10;  min_sell = 10
         elif item_type == 1:
-            item = self.item_lookup_service.lookup_item_by_id(item_id,"cargo_desc")
-
-        # Specify that recipes can't be bought or sold
-        if "Recipe: " in item["name"]:
-            max_buy=0;  min_sell=0
+            if item_id == 501736939:
+                # Bottomless Sack of Hex Coins price cap
+                min_sell = np.min([min_sell,10000])
+            elif item_id == 983297878:
+                # Fair Sack of Hex Coins price cap
+                min_sell = np.min([min_sell,500])
+            elif item_id == 1290464936:
+                # Small Sack of Hex Coins price cap
+                min_sell = np.min([min_sell,100])
+            elif item_id == 1955158156:
+                # Large Sack of Hex Coins price cap
+                min_sell = np.min([min_sell,1000])
         
         return (max_buy, min_sell)
     
