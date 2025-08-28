@@ -947,10 +947,14 @@ class CompareJobsProcessor(BaseProcessor):
 
             # Calculate price window
             window = self._get_price_window(entry[0],entry[2])
-            row.append(window)
 
             # Calculate price to procure materials
             price = self._get_sale_price(window,"buy")
+
+            # Format window for easier reading:
+            window = f"{int(np.round(window[0]))} — {int(np.round(window[1]))}"
+
+            row.append(window)
             row.append(price)
 
             # Calculate row's contribution to overall job value
@@ -1013,10 +1017,12 @@ class CompareJobsProcessor(BaseProcessor):
 
             # Calculate price window
             window = self._get_price_window(item_id,item_type)
-            row.append(window)
-
             # Calculate price to liquidate materials
             price = self._get_sale_price(window,"sell")
+
+            # Format window for easier reading:
+            window = f"{int(np.round(window[0]))} — {int(np.round(window[1]))}"
+            row.append(window)
             row.append(price)
 
             # Calculate row's contribution to overall job value
@@ -1134,8 +1140,10 @@ class CompareJobsProcessor(BaseProcessor):
                     price = price_window[1]-value
                 elif strat == "overbid":
                     value = self.settings.get("market_strategies",{}).get("sell_strat_value",1.0)
+                    price = price_window[0]+value
                 elif strat == "fractional":
                     value = self.settings.get("market_strategies",{}).get("sell_strat_value",50)
+                    price = ((price_window[1]-price_window[0])*value/100.0) + price_window[0]
                 else:
                     raise ValueError
                 
@@ -1145,7 +1153,7 @@ class CompareJobsProcessor(BaseProcessor):
             else:
                 raise ValueError
         except:
-            logging.error("Unable to process {strat} - {sale_method} transaction with price window: {price_window}.")
+            logging.error(f"Unable to process {strat} - {sale_method} transaction with price window: {price_window}.")
     
     
     def _load_settings(self):
