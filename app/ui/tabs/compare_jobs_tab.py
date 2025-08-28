@@ -72,14 +72,14 @@ class CompareJobsTab(ctk.CTkFrame):
 
         # Set up headings and column widths
         column_widths = {
-            "Job Type": 50,
-            "Job": 100,
+            "Job Type": 60,
+            "Job": 250,
             "Skill": 100,
-            "Time": 100,
-            "Cost": 100,
-            "Gross": 100,
-            "Profit": 100,
-            "Profit Per Min": 100,
+            "Time": 50,
+            "Cost": 60,
+            "Gross": 60,
+            "Profit": 60,
+            "Profit Per Min": 80,
             "Passive": 50,
         }
 

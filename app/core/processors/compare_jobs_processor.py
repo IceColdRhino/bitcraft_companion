@@ -674,6 +674,86 @@ class CompareJobsProcessor(BaseProcessor):
                     # so the job got omitted and isn't inside raw_operations
                     continue
 
+            # Add conversion recipe info to list of raw_operations
+            job_type = "Convert"
+            conversion_recipes = self.reference_data.get("item_conversion_recipe_desc", [])
+            for recipe in conversion_recipes:
+                job_id = recipe["id"]
+
+                job_name = recipe["name"]
+                long_name = recipe["name"]
+
+                # Skip all conversion recipes that are named "Resolve %"
+                if "Resolve" in job_name:
+                    continue
+
+                job_time = recipe["time_cost"]
+                job_stamina = recipe["stamina_cost"]
+
+                # Lots of weird formatting to do. Because WHY would the conversion recipe
+                # stack format be the same as extraction/crafting formats?
+                input_stacks = recipe["input_items"]
+                for entry in input_stacks:
+                    if len(entry)==4:
+                        entry.append(1.0)
+                job_inputs = self._format_input_stacks(input_stacks)
+
+                output_stacks = [list(recipe["output_item"][1].values())]
+                job_outputs = self._format_output_stacks(output_stacks)
+
+                try:
+                    job_cost = sum(i[5] for i in job_inputs)
+                except:
+                    job_cost = 0
+                try:
+                    job_gross = sum(o[5] for o in job_outputs)
+                except:
+                    job_gross = 0
+                job_profit = job_gross-job_cost
+
+                # Include an epsilon because there are some recipes with job_time = 0
+                job_pfm = (job_profit/(job_time+1e-12))*60
+
+                job_hands = recipe["allow_use_hands"]
+
+                # Conceivably, some of these could change in the future
+                # but for the time being...
+                job_durability = 0
+                job_building = []
+                job_level = "Any: 1"
+                job_tool = []
+                job_xp = []
+                job_actions = 1
+                job_passive = False
+                total_power = 1
+                swing_speed = 1
+
+                raw_operation = {
+                    "job_id": f"convert_{job_id}",
+                    "job_type": job_type,
+                    "job_name": job_name,
+                    "long_name": long_name,
+                    "time_requirement": job_time,
+                    "stamina_requirement": job_stamina,
+                    "tool_durability_lost": job_durability,
+                    "building_requirement": job_building,
+                    "level_requirement": job_level,
+                    "tool_requirement": job_tool,
+                    "input_stacks": job_inputs,
+                    "xp_gain": job_xp,
+                    "output_stacks": job_outputs,
+                    "actions_required": job_actions,
+                    "allow_use_hands": job_hands,
+                    "is_passive": job_passive,
+                    "total_power": total_power,
+                    "swing_speed": swing_speed,
+                    "cost": job_cost,
+                    "gross": job_gross,
+                    "profit": job_profit,
+                    "profit_per_min": job_pfm,
+                }
+                raw_operations.append(raw_operation)
+
             # Now build the hierarchy
             return self._build_hierarchy(raw_operations)
 
@@ -870,9 +950,9 @@ class CompareJobsProcessor(BaseProcessor):
     
     def _source_convert(self,type_array):
         """Convert x format type array to 'preferred source' as used by item_lookup_service"""
-        if type_array == [1, []]:
+        if type_array==[1,[]] or type_array==[1,{}]:
             return "cargo_desc"
-        elif type_array == [0, []]:
+        elif type_array==[0,[]] or type_array==[0,{}]:
             return "item_desc"
         else:
             logging.error(f"Unrecognized item type array: {type_array}")
@@ -1072,9 +1152,9 @@ class CompareJobsProcessor(BaseProcessor):
         
     def _get_price_window(self,item_id,item_type):
         """Given item lookup info, returns a price window (low,high) tuple of existing market orders."""
-        if item_type == [0,[]]:
+        if item_type==[0,[]] or item_type==[0,{}]:
             item_type = 0
-        elif item_type == [1,[]]:
+        elif item_type==[1,[]] or item_type==[1,{}]:
             item_type = 1
         else:
             logging.error(f"Unrecognized item, id: {item_id}, type array: {item_type}")

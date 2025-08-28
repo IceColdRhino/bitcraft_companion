@@ -2215,6 +2215,44 @@ class ExtractionRecipeDesc:
             "tool_mesh_index": self.tool_mesh_index,
             "recipe_performance_id": self.recipe_performance_id,
         }
+    
+@dataclass
+class ItemConversionRecipeDesc:
+    """Item Conversion recipe description data from item_conversion_recipe_desc table."""
+    # At the time of writing, some elements are int which could conceivably become float at a later date
+    id: int
+    name: str
+    time_cost: int
+    stamina_cost: int
+    location_context: int
+    string_context: str
+    output_item: List
+    input_items: List
+    required_equipment_id: int
+    required_equipment_tier: int
+    allow_use_hands: bool
+    recipe_performance_id: int
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "ItemConversionRecipeDesc":
+        """Create ItemConversionRecipeDesc from subscription data."""
+        if not isinstance(data, dict):
+            raise ValueError(f"Invalid item_conversion_recipe_desc format: expected dict, got {type(data)}")
+
+        return cls(
+            id=data.get("id", 0),
+            name=data.get("name","Convert"),
+            time_cost=data.get("time_cost",1),
+            stamina_cost=data.get("stamina_cost",1),
+            location_context=data.get("location_context",0),
+            string_context=data.get("string_context","Convert"),
+            output_item=data.get("output_item",[]),
+            input_items=data.get("input_items",[]),
+            required_equipment_id=data.get("required_equipment_id",0),
+            required_equipment_tier=data.get("required_equipment_tier",0),
+            allow_use_hands=data.get("allow_use_hands",True),
+            recipe_performance_id=data.get("recipe_performance_id",0),
+        )
 
 
 @dataclass

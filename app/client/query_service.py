@@ -133,6 +133,7 @@ class QueryService:
             "SELECT * FROM building_type_desc;",
             "SELECT * FROM crafting_recipe_desc;",
             "SELECT * FROM extraction_recipe_desc;",
+            "SELECT * FROM item_conversion_recipe_desc;",
             "SELECT * FROM claim_tile_cost;",
             "SELECT * FROM npc_desc;",
         ]

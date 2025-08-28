@@ -11,7 +11,7 @@ from .base_processor import BaseProcessor
 from app.models import (
     ResourceDesc, ItemListDesc, ItemDesc, CargoDesc, ToolDesc,
     BuildingDesc, BuildingTypeDesc, CraftingRecipeDesc, ExtractionRecipeDesc,
-    ClaimTileCost, NpcDesc, BuildingFunctionTypeMappingDesc
+    ItemConversionRecipeDesc, ClaimTileCost, NpcDesc, BuildingFunctionTypeMappingDesc
 )
 
 
@@ -43,6 +43,7 @@ class ReferenceDataProcessor(BaseProcessor):
             "building_type_desc": BuildingTypeDesc,
             "crafting_recipe_desc": CraftingRecipeDesc,
             "extraction_recipe_desc": ExtractionRecipeDesc,
+            "item_conversion_recipe_desc": ItemConversionRecipeDesc,
             "claim_tile_cost": ClaimTileCost,
             "npc_desc": NpcDesc,
             "building_function_type_mapping_desc": BuildingFunctionTypeMappingDesc,
