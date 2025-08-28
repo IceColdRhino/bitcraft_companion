@@ -11,11 +11,16 @@ class OptimizedTableMixin:
     Mixin class providing high-performance table optimizations.
     
     Provides:
-    - Background processing for heavy operations
+    - Background processing for heavy operations (data processing only)
     - Smart caching with memory management
     - Debouncing for rapid events
     - Lazy loading for large datasets
-    - Differential UI updates
+    - Differential UI updates (main thread only)
+    
+    THREADING MODEL:
+    - Background threads: Heavy data processing, filtering, sorting
+    - Main thread: All UI operations, completion callbacks, widget updates
+    - Automatic threshold-based async/sync decision making
     """
 
     def __init_optimization__(
@@ -104,7 +109,16 @@ class OptimizedTableMixin:
         *args, 
         **kwargs
     ) -> str:
-        """Submit a task to background processing with automatic cancellation."""
+        """
+        Submit a task to background processing with automatic cancellation.
+        
+        CRITICAL THREADING RULES:
+        - func: Executes on background thread - NO UI operations allowed
+        - callback: Executes on main thread - UI operations are safe
+        - error_callback: Executes on main thread - UI operations are safe
+        
+        Use this for heavy data processing that should not block the UI.
+        """
         
         # Always use synchronous processing for the first few seconds to avoid startup conflicts
         if not hasattr(self, '_startup_complete') or not self._startup_complete:

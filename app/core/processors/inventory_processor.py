@@ -292,6 +292,7 @@ class InventoryProcessor(BaseProcessor):
             else:
                 # Fallback to synchronous processing
                 consolidated_inventory = self._consolidate_inventory()
+                logging.info(f"[InventoryProcessor] Sending inventory_update (sync) - {len(consolidated_inventory)} items")
                 self._queue_update("inventory_update", consolidated_inventory)
 
         except Exception as e:
@@ -306,6 +307,7 @@ class InventoryProcessor(BaseProcessor):
         """
         try:
             # Send the consolidated data to UI
+            logging.info(f"[InventoryProcessor] Sending inventory_update (background) - {len(consolidated_inventory)} items")
             self._queue_update("inventory_update", consolidated_inventory)
             logging.debug("[InventoryProcessor] Background inventory consolidation completed")
         except Exception as e:

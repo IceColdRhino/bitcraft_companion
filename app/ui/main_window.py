@@ -4,7 +4,7 @@ import time
 import queue
 import threading
 import logging
-from typing import Dict
+from typing import Dict, List, Any
 
 import customtkinter as ctk
 from tkinter import messagebox
@@ -18,9 +18,11 @@ from app.ui.tabs.active_crafting_tab import ActiveCraftingTab
 from app.ui.tabs.traveler_tasks_tab import TravelerTasksTab
 from app.ui.tabs.compare_jobs_tab import CompareJobsTab
 from app.ui.components.activity_window import ActivityWindow
+from app.ui.components.codex_window import CodexWindow
 from app.services.activity_logger import ActivityLogger
 from app.ui.themes import get_theme_manager, get_color, register_theme_callback
 from app.ui.components.saved_search_dialog import SaveSearchDialog, LoadSearchDialog
+from app.ui.mixins import SearchableWindowMixin
 
 
 class ShutdownDialog(ctk.CTkToplevel):
@@ -74,7 +76,7 @@ class ShutdownDialog(ctk.CTkToplevel):
             pass
 
 
-class MainWindow(ctk.CTk):
+class MainWindow(ctk.CTk, SearchableWindowMixin):
     """Main application window with modular tab system and responsive shutdown."""
 
     def __init__(self, data_service: DataService):
@@ -128,6 +130,9 @@ class MainWindow(ctk.CTk):
 
         # Activity window reference (UI only created when needed)
         self.activity_window = None
+        
+        # Codex window reference (UI only created when needed)
+        self.codex_window = None
 
         # Shutdown tracking
         self.is_shutting_down = False
@@ -192,16 +197,14 @@ class MainWindow(ctk.CTk):
         # self.show_tab("Compare Jobs")
         # TEMP - Used for convenience/turnaround on development
 
-        # Ensure loading overlay is visible on top and lock tab buttons
-        # Just show the overlay and set initial state
-        logging.debug(f"[LOADING STATE] Showing initial loading overlay")
-        self.loading_overlay.grid(row=0, column=0, sticky="nsew")
-        self.loading_overlay.tkraise()
-        self._set_tab_buttons_state("disabled")
-
-        # Start loading animation
-        if hasattr(self, "loading_indicator"):
-            self._start_loading_animation()
+        # Enable immediate tab navigation - no blocking startup
+        # Individual tabs will show their own loading states
+        logging.debug(f"[NON-BLOCKING STARTUP] Tabs ready for immediate navigation")
+        self._set_tab_buttons_state("normal")
+        
+        # Hide main loading overlay - let tabs handle their own loading
+        self.is_loading = False
+        self.loading_overlay.grid_remove()
 
         # Start data processing with enhanced timer support and resize detection
         logging.debug("Starting data processing loop with enhanced timer support")
@@ -244,80 +247,36 @@ class MainWindow(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def _create_search_section(self):
-        """Creates the search section with field and search management buttons."""
+        """Creates the search section using SearchableWindowMixin with tab-specific search."""
         search_frame = ctk.CTkFrame(self, fg_color="transparent")
         search_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=8)
-        search_frame.grid_columnconfigure(0, weight=1)  # Make search field expand
+        search_frame.grid_columnconfigure(0, weight=1)
 
-        # Search field with manual placeholder (reliable solution)
-        self.search_field = ctk.CTkEntry(
+        # Tab configuration for main window
+        tab_context_config = {
+            'base_window_id': 'main',
+            'tabs': {
+                'inventory': {'placeholder': 'Search Claim Inventory... (e.g., item=stone tier>2 quantity<50)'},
+                'crafting': {'placeholder': 'Search Passive Crafting... (e.g., building=workshop time<60)'},
+                'active_crafting': {'placeholder': 'Search Active Crafting... (e.g., crafter=player status=active)'},
+                'tasks': {'placeholder': 'Search Traveler Tasks... (e.g., traveler=merchant status=pending)'}
+            }
+        }
+
+        # Set up search functionality with tab context immediately
+        # The SearchableWindowMixin will handle loading states gracefully
+        self._setup_search(
             search_frame,
-            height=34,
-            font=ctk.CTkFont(size=12),
-            fg_color=get_color("BACKGROUND_TERTIARY"),
-            border_color=get_color("BORDER_DEFAULT"),
-            text_color=get_color("TEXT_PRIMARY"),
-            corner_radius=8,
+            placeholder_text="Search...",
+            show_save_load=True,
+            show_clear=True,
+            window_id="main",
+            tab_context_config=tab_context_config
         )
 
-        # Manual placeholder implementation
-        self.placeholder_text = "Search Claim Inventory..."
-        self.is_placeholder_active = True
-        self._show_placeholder()
-
-        # Bind events for placeholder behavior
-        self.search_field.bind("<FocusIn>", self._on_search_focus_in)
-        self.search_field.bind("<FocusOut>", self._on_search_focus_out)
-        self.search_field.bind("<Key>", self._on_search_key)
-        self.search_field.bind("<KeyRelease>", self._on_search_change_event)
-        self.search_field.bind("<Control-Delete>", self._on_ctrl_delete)
-        self.search_field.bind("<Control-BackSpace>", self._on_ctrl_backspace)
-        self.search_field.grid(row=0, column=0, sticky="ew", padx=(0, 8))
-
-        # Save Search button
-        self.save_search_button = ctk.CTkButton(
-            search_frame,
-            text="Save",
-            command=self.save_search,
-            width=80,
-            height=34,
-            font=ctk.CTkFont(size=11),
-            fg_color=get_color("BACKGROUND_SECONDARY"),
-            hover_color=get_color("BUTTON_HOVER"),
-            corner_radius=8,
-            text_color="white",
-        )
-        self.save_search_button.grid(row=0, column=1, sticky="e", padx=(0, 5))
-
-        # Load Search button
-        self.load_search_button = ctk.CTkButton(
-            search_frame,
-            text="Load",
-            command=self.load_search,
-            width=80,
-            height=34,
-            font=ctk.CTkFont(size=11),
-            fg_color=get_color("BACKGROUND_SECONDARY"),
-            hover_color=get_color("BUTTON_HOVER"),
-            corner_radius=8,
-            text_color=get_color("TEXT_PRIMARY"),
-        )
-        self.load_search_button.grid(row=0, column=2, sticky="e", padx=(0, 5))
-
-        # Clear button with modern styling
-        self.clear_button = ctk.CTkButton(
-            search_frame,
-            text="✕ Clear",
-            command=self.clear_search,
-            width=70,
-            height=34,
-            font=ctk.CTkFont(size=11),
-            fg_color=get_color("BACKGROUND_SECONDARY"),
-            hover_color=get_color("BUTTON_HOVER"),
-            corner_radius=8,
-            text_color=get_color("TEXT_PRIMARY"),
-        )
-        self.clear_button.grid(row=0, column=3, sticky="e")
+        # Pack the search bar component
+        if hasattr(self, 'search_bar'):
+            self.search_bar.pack(fill="x")
 
     def _create_status_bar(self):
         """Creates the status bar with connection info, last update, and ping."""
@@ -355,20 +314,32 @@ class MainWindow(ctk.CTk):
 
     def clear_search(self):
         """Clears the search field."""
-        # Clear the entry and show placeholder
-        self.search_field.delete(0, "end")
-        self._show_placeholder()
-        # Trigger search change to apply empty filter
-        self.on_search_change()
-        self.search_field.focus()  # Return focus to search field
+        # Use SearchableWindowMixin method if available
+        if hasattr(self, 'search_bar') and self.search_bar:
+            self.search_bar.clear_search()
+            return
+            
+        # Legacy implementation for backward compatibility  
+        if hasattr(self, 'search_field'):
+            # Clear the entry and show placeholder
+            self.search_field.delete(0, "end")
+            self._show_placeholder()
+            self.search_field.focus()  # Return focus to search field
 
     def save_search(self):
         """Opens the save search dialog to save the current search query."""
+        # SearchableWindowMixin has its own save/load functionality through search_bar
+        if hasattr(self, 'search_bar') and self.search_bar:
+            # The search_bar component handles save/load functionality
+            return
+            
+        # Legacy implementation for backward compatibility
         current_query = self.get_search_text()
 
         if not current_query or not current_query.strip():
             messagebox.showwarning("No Search Query", "Please enter a search query before saving.", parent=self)
-            self.search_field.focus()
+            if hasattr(self, 'search_field'):
+                self.search_field.focus()
             return
 
         # Callback for when search is saved successfully
@@ -389,8 +360,7 @@ class MainWindow(ctk.CTk):
         def on_load_callback(search_id, name, query):
             logging.info(f"Loading search '{name}': {query}")
             self._set_search_text(query)
-            # Trigger search change to apply the loaded filter
-            self.on_search_change()
+            # SearchableWindowMixin handles search changes automatically
 
         # Open load dialog
         try:
@@ -401,17 +371,49 @@ class MainWindow(ctk.CTk):
 
     def _set_search_text(self, text: str):
         """Set the search field text and handle placeholder state."""
-        # Clear current content
-        self.search_field.delete(0, "end")
+        # Use SearchableWindowMixin method if available
+        if hasattr(self, 'search_bar') and self.search_bar:
+            self.search_bar.set_search_text(text)
+            return
+            
+        # Legacy implementation for backward compatibility
+        if hasattr(self, 'search_field'):
+            # Clear current content
+            self.search_field.delete(0, "end")
 
-        if text and text.strip():
-            # Insert the new text
-            self.search_field.insert(0, text)
-            self.is_placeholder_active = False
-            self.search_field.configure(text_color=get_color("TEXT_PRIMARY"))
-        else:
-            # Show placeholder if text is empty
-            self._show_placeholder()
+            if text and text.strip():
+                # Insert the new text
+                self.search_field.insert(0, text)
+                if hasattr(self, 'is_placeholder_active'):
+                    self.is_placeholder_active = False
+                self.search_field.configure(text_color=get_color("TEXT_PRIMARY"))
+            else:
+                # Show placeholder if text is empty
+                self._show_placeholder()
+
+    def _switch_to_tab_search_context(self, tab_name: str):
+        """Switch search context based on the active tab."""
+        try:
+            # Map main window tab names to search context tab names
+            tab_mapping = {
+                "Claim Inventory": "inventory",
+                "Passive Crafting": "crafting", 
+                "Active Crafting": "active_crafting",
+                "Traveler's Tasks": "tasks"
+            }
+            
+            search_tab_name = tab_mapping.get(tab_name, "inventory")
+            
+            # Switch tab context using the SearchableWindowMixin
+            if hasattr(self, 'switch_tab_context'):
+                self.switch_tab_context(search_tab_name)
+            
+            logging.debug(f"Switched search context to: {search_tab_name}")
+            
+        except Exception as e:
+            logging.error(f"Error switching tab search context: {e}")
+            # Fallback to old method if something goes wrong
+            self._update_search_placeholder(tab_name)
 
     def _update_search_placeholder(self, tab_name):
         """Update search field placeholder text based on current tab with keyword examples."""
@@ -642,8 +644,7 @@ class MainWindow(ctk.CTk):
 
     def _process_search_change(self):
         """Process search field changes."""
-        if not self.is_placeholder_active:
-            self.on_search_change()
+        # SearchableWindowMixin handles search changes automatically through its own callbacks
 
     def _on_escape_key(self, event):
         """Handle Escape key press to clear the search field if it has content."""
@@ -659,12 +660,52 @@ class MainWindow(ctk.CTk):
         except Exception as e:
             logging.error(f"Error in Escape key handler: {e}")
             return "break"
+    
+    # SearchableWindowMixin implementation
+    def _get_searchable_data(self) -> List[Dict[str, Any]]:
+        """Return searchable data for the currently active tab."""
+        try:
+            if self.active_tab_name and self.active_tab_name in self.tabs:
+                active_tab = self.tabs[self.active_tab_name]
+                
+                # Get data from the active tab's all_data attribute
+                if hasattr(active_tab, 'all_data'):
+                    return active_tab.all_data
+                    
+            return []
+            
+        except Exception as e:
+            logging.error(f"Error getting searchable data: {e}")
+            return []
+    
+    def _update_ui_with_filtered_data(self, filtered_data: List[Dict[str, Any]]):
+        """Update the active tab's UI with filtered search results."""
+        try:
+            if self.active_tab_name and self.active_tab_name in self.tabs:
+                active_tab = self.tabs[self.active_tab_name]
+                
+                # The tabs handle filtering internally by calling get_search_text()
+                # So we just trigger their existing filter method without parameters
+                if hasattr(active_tab, 'apply_filter'):
+                    active_tab.apply_filter()  # No parameters - they'll call get_search_text()
+                elif hasattr(active_tab, 'display_filtered_data'):
+                    active_tab.display_filtered_data(filtered_data)
+                
+        except Exception as e:
+            logging.error(f"Error updating UI with filtered data: {e}")
 
     def get_search_text(self):
         """Get the current search text (excluding placeholder)."""
-        if self.is_placeholder_active:
+        # Use SearchableWindowMixin method if available
+        if hasattr(self, 'search_bar') and self.search_bar:
+            return super().get_search_text() if hasattr(super(), 'get_search_text') else self.search_bar.get_search_text()
+        
+        # Fallback for legacy implementation
+        if hasattr(self, 'is_placeholder_active') and self.is_placeholder_active:
             return ""
-        return self.search_field.get()
+        if hasattr(self, 'search_field'):
+            return self.search_field.get()
+        return ""
 
     def _update_status_display(self):
         """Update the status bar display with current information."""
@@ -803,7 +844,9 @@ class MainWindow(ctk.CTk):
 
     def hide_loading(self):
         """Hides the loading overlay with minimum display time."""
+        logging.debug(f"[LOADING] hide_loading called - is_loading: {self.is_loading}")
         if not self.is_loading:
+            logging.debug("[LOADING] Already not loading, skipping hide")
             return
 
         # Ensure minimum display time of 1 second for better UX
@@ -813,9 +856,11 @@ class MainWindow(ctk.CTk):
 
             if elapsed < min_display_time:
                 remaining = int((min_display_time - elapsed) * 1000)
+                logging.debug(f"[LOADING] Delaying hide by {remaining}ms for UX")
                 self.after(remaining, self._actually_hide_loading)
                 return
 
+        logging.debug("[LOADING] Calling _actually_hide_loading immediately")
         self._actually_hide_loading()
 
     def _actually_hide_loading(self):
@@ -953,6 +998,20 @@ class MainWindow(ctk.CTk):
         except Exception as e:
             logging.error(f"Error opening activity window: {e}")
 
+    def _open_codex_window(self):
+        """Opens the codex material requirements window."""
+        try:
+            if not self.codex_window or not self.codex_window.winfo_exists():
+                self.codex_window = CodexWindow(self, data_service=self.data_service)
+                logging.info("Codex window opened")
+            else:
+                # Bring existing window to front
+                self.codex_window.lift()
+                self.codex_window.focus()
+
+        except Exception as e:
+            logging.error(f"Error opening codex window: {e}")
+
     def _update_activity_window_claim_info(self, claim_name: str):
         """Update activity window with new claim info."""
         try:
@@ -1032,9 +1091,9 @@ class MainWindow(ctk.CTk):
             f"[TAB WIDGET] {tab_name} - widget_children: {widget_children}, tree_children: {tree_children}, info_time: {widget_info_time:.4f}s"
         )
 
-        # Update search placeholder to match current tab
+        # Switch search tab context
         placeholder_start = time.time()
-        self._update_search_placeholder(tab_name)
+        self._switch_to_tab_search_context(tab_name)
         placeholder_time = time.time() - placeholder_start
 
         # Optimized button styling - only update buttons that actually changed
@@ -1048,9 +1107,9 @@ class MainWindow(ctk.CTk):
             self.tab_buttons[tab_name].configure(**self.cached_active_style)
         button_time = time.time() - button_start
 
-        # Apply current search filter to the new tab
+        # SearchableWindowMixin handles search filtering automatically when tab context switches
         filter_start = time.time()
-        self.on_search_change()
+        # Filter is applied automatically by tab context switch
         filter_time = time.time() - filter_start
 
         total_time = time.time() - tab_switch_start
@@ -1069,8 +1128,11 @@ class MainWindow(ctk.CTk):
                 f"[TAB SWITCH] UI_UPDATE - '{tab_name}' (+{ui_update_time:.4f}s for UI updates, {complete_time:.4f}s total)"
             )
 
-    def on_search_change(self, *args):
-        """Applies search filter to the currently active tab."""
+    def _legacy_on_search_change(self, *args):
+        """Legacy search change handler - replaced by SearchableWindowMixin."""
+        # This method is kept for backward compatibility but should not be used
+        # SearchableWindowMixin._on_search_change() is used instead
+        logging.debug("Legacy search change handler called - this should not happen")
         if self.active_tab_name and hasattr(self.tabs[self.active_tab_name], "apply_filter"):
             filter_start = time.time()
             self.tabs[self.active_tab_name].apply_filter()
@@ -1080,9 +1142,13 @@ class MainWindow(ctk.CTk):
 
     def _check_all_data_loaded(self):
         """Check if all expected data types have been received and hide loading if so."""
+        logging.debug(f"[LOADING CHECK] is_loading: {self.is_loading}, received: {self.received_data_types}, expected: {self.expected_data_types}")
         if self.is_loading and self.received_data_types >= self.expected_data_types:
-            logging.info(f"All initial data loaded: {self.received_data_types}")
+            logging.info(f"[LOADING COMPLETE] All initial data loaded: {self.received_data_types}")
             self.hide_loading()
+        else:
+            missing = self.expected_data_types - self.received_data_types
+            logging.debug(f"[LOADING CHECK] Still missing: {missing}")
 
     def _celebrate_task_completions(self, completed_tasks):
         """
@@ -1194,8 +1260,14 @@ class MainWindow(ctk.CTk):
         self.is_shutting_down = True
 
         try:
-            # STEP 1: Immediately hide main window and show shutdown dialog
+            # STEP 1: Immediately hide main window and close child windows
             self.withdraw()  # Hide main window instantly
+
+            # Close child windows immediately
+            if self.codex_window and self.codex_window.winfo_exists():
+                self.codex_window.withdraw()
+            if self.activity_window and self.activity_window.winfo_exists():
+                self.activity_window.withdraw()
 
             # Show shutdown dialog
             self.shutdown_dialog = ShutdownDialog(self)
@@ -1352,6 +1424,10 @@ class MainWindow(ctk.CTk):
             if "Compare Jobs" in self.tabs:
                 self.tabs["Compare Jobs"].update_data([])
 
+            # Clear codex window if it's open
+            if self.codex_window and self.codex_window.winfo_exists():
+                self.codex_window.clear_for_claim_switch()
+
         except Exception as e:
             logging.error(f"Error clearing tab data: {e}")
 
@@ -1373,6 +1449,10 @@ class MainWindow(ctk.CTk):
 
                 # Update activity window with new claim info
                 self._update_activity_window_claim_info(claim_name)
+
+                # Update codex window if it's open
+                if self.codex_window and self.codex_window.winfo_exists():
+                    self.codex_window.handle_claim_switch_complete(claim_id, claim_name)
 
                 # Re-enable tab buttons
                 self._set_tab_buttons_state("normal")
@@ -1527,6 +1607,9 @@ class MainWindow(ctk.CTk):
         """Enhanced data queue processing that handles claim switching messages."""
         try:
             message_count = 0
+            queue_size = self.data_service.data_queue.qsize()
+            if queue_size > 0:
+                logging.info(f"[MAIN WINDOW] Processing queue with {queue_size} messages")
             while not self.data_service.data_queue.empty():
                 message = self.data_service.data_queue.get_nowait()
                 message_count += 1
@@ -1538,7 +1621,7 @@ class MainWindow(ctk.CTk):
 
                 # Log data type and size for debugging
                 data_size = len(msg_data) if isinstance(msg_data, (dict, list)) else "unknown"
-                logging.debug(f"Processing message {message_count}: {msg_type} (data size: {data_size})")
+                logging.info(f"[MAIN WINDOW] Processing message {message_count}: {msg_type} (data size: {data_size})")
 
                 # TEMP - Used for disabling some laggy queries
                 # self.received_data_types.add("inventory")
@@ -1547,21 +1630,30 @@ class MainWindow(ctk.CTk):
                 # self.received_data_types.add("tasks")
 
                 if msg_type == "inventory_update":
+                    logging.info(f"[MAIN WINDOW] Received inventory_update message with {len(msg_data) if isinstance(msg_data, dict) else 'unknown'} items")
                     if "Claim Inventory" in self.tabs:
                         start_time = time.time()
 
                         # Log inventory data details for debugging
                         data_size = len(msg_data) if isinstance(msg_data, dict) else "unknown"
-                        logging.debug(f"Processing inventory update: {data_size} items, loading state: {self.is_loading}")
+                        logging.info(f"[MAIN WINDOW] Processing inventory update: {data_size} items, loading state: {self.is_loading}")
 
                         self.tabs["Claim Inventory"].update_data(msg_data)
                         update_time = time.time() - start_time
                         logging.debug(f"Inventory tab update took {update_time:.3f}s")
 
+                    # Update codex window if it's open
+                    if self.codex_window and self.codex_window.winfo_exists():
+                        try:
+                            self.codex_window.update_data(msg_data)
+                            logging.debug("Updated codex window with inventory changes")
+                        except Exception as e:
+                            logging.error(f"Error updating codex window: {e}")
+
                         # Track that we've received inventory data
                         if self.is_loading:
                             self.received_data_types.add("inventory")
-                            logging.debug(
+                            logging.info(
                                 f"[LOADING STATE] Received inventory data - progress: {self.received_data_types}/{self.expected_data_types}"
                             )
                             self._check_all_data_loaded()

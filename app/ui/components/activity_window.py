@@ -20,18 +20,18 @@ class ActivityWindow(ctk.CTkToplevel):
         self.activity_entries: List[Dict] = []
         self.max_entries = 50
         self.activity_log_file = None
-        
+
         # Store UI component references for theme updates
         self.ui_components = {}
 
         self._setup_window()
-        
+
         # Register for theme change notifications
         register_theme_callback(self._on_theme_changed)
-        
+
         # Apply current theme
         self.configure(fg_color=get_color("BACKGROUND_PRIMARY"))
-        
+
         self._create_widgets()
         self._setup_activity_log_file()
         self._load_existing_log()
@@ -65,11 +65,11 @@ class ActivityWindow(ctk.CTkToplevel):
 
         # Title (removed emoji)
         self.title_label = ctk.CTkLabel(
-            self.header_frame, 
-            text="Recent Activity", 
-            font=ctk.CTkFont(size=18, weight="bold"), 
+            self.header_frame,
+            text="Recent Activity",
+            font=ctk.CTkFont(size=18, weight="bold"),
             anchor="w",
-            text_color=get_color("TEXT_PRIMARY")
+            text_color=get_color("TEXT_PRIMARY"),
         )
         self.title_label.grid(row=0, column=0, sticky="w")
 
@@ -87,16 +87,13 @@ class ActivityWindow(ctk.CTkToplevel):
             command=self.clear_log,
             fg_color=get_color("STATUS_ERROR"),
             hover_color=get_color("STATUS_ERROR"),
-            text_color=get_color("TEXT_PRIMARY")
+            text_color=get_color("TEXT_PRIMARY"),
         )
         self.clear_button.grid(row=0, column=0)
 
         # Main content frame
         self.content_frame = ctk.CTkFrame(
-            self,
-            fg_color=get_color("BACKGROUND_SECONDARY"),
-            border_width=1,
-            border_color=get_color("BORDER_DEFAULT")
+            self, fg_color=get_color("BACKGROUND_SECONDARY"), border_width=1, border_color=get_color("BORDER_DEFAULT")
         )
         self.content_frame.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 20))
         self.content_frame.grid_columnconfigure(0, weight=1)
@@ -104,13 +101,13 @@ class ActivityWindow(ctk.CTkToplevel):
 
         # Scrollable text area for activity log
         self.log_textbox = ctk.CTkTextbox(
-            self.content_frame, 
-            font=ctk.CTkFont(size=11, family="Consolas"), 
+            self.content_frame,
+            font=ctk.CTkFont(size=11, family="Consolas"),
             wrap="word",
             fg_color=get_color("BACKGROUND_TERTIARY"),
             text_color=get_color("TEXT_PRIMARY"),
             border_width=1,
-            border_color=get_color("BORDER_DEFAULT")
+            border_color=get_color("BORDER_DEFAULT"),
         )
         self.log_textbox.grid(row=0, column=0, sticky="nsew", padx=15, pady=15)
 
@@ -131,9 +128,9 @@ class ActivityWindow(ctk.CTkToplevel):
 
         # Include player name in the message if available
         if player_name:
-            message = f"{timestamp} [{player_name}] {item_name}: {previous_qty} → {new_qty} ({action_text})"
+            message = f"{timestamp} [{player_name}] {item_name}: {previous_qty} -> {new_qty} ({action_text})"
         else:
-            message = f"{timestamp} {item_name}: {previous_qty} → {new_qty} ({action_text})"
+            message = f"{timestamp} {item_name}: {previous_qty} -> {new_qty} ({action_text})"
 
         entry = {
             "timestamp": timestamp,
@@ -194,7 +191,7 @@ class ActivityWindow(ctk.CTkToplevel):
             # Parse lines back into entries
             loaded_count = 0
             for line in recent_lines:
-                # Expected format: "HH:MM:SS AM/PM Item Name: oldqty → newqty (+/-change)"
+                # Expected format: "HH:MM:SS AM/PM Item Name: oldqty -> newqty (+/-change)"
                 # Or fallback for any format - just load as-is
                 try:
                     logging.debug(f"Processing log line: {line}")
@@ -358,46 +355,43 @@ class ActivityWindow(ctk.CTkToplevel):
         try:
             # Update window background
             self.configure(fg_color=get_color("BACKGROUND_PRIMARY"))
-            
+
             # Update header frame
-            if hasattr(self, 'header_frame'):
+            if hasattr(self, "header_frame"):
                 self.header_frame.configure(fg_color="transparent")
-            
-            # Update controls frame  
-            if hasattr(self, 'controls_frame'):
+
+            # Update controls frame
+            if hasattr(self, "controls_frame"):
                 self.controls_frame.configure(fg_color="transparent")
-            
+
             # Update title label
-            if hasattr(self, 'title_label'):
+            if hasattr(self, "title_label"):
                 self.title_label.configure(text_color=get_color("TEXT_PRIMARY"))
-            
+
             # Update clear button
-            if hasattr(self, 'clear_button'):
+            if hasattr(self, "clear_button"):
                 self.clear_button.configure(
                     fg_color=get_color("STATUS_ERROR"),
                     hover_color=get_color("STATUS_ERROR"),
-                    text_color=get_color("TEXT_PRIMARY")
+                    text_color=get_color("TEXT_PRIMARY"),
                 )
-            
+
             # Update content frame
-            if hasattr(self, 'content_frame'):
-                self.content_frame.configure(
-                    fg_color=get_color("BACKGROUND_SECONDARY"),
-                    border_color=get_color("BORDER_DEFAULT")
-                )
-            
+            if hasattr(self, "content_frame"):
+                self.content_frame.configure(fg_color=get_color("BACKGROUND_SECONDARY"), border_color=get_color("BORDER_DEFAULT"))
+
             # Update text box
-            if hasattr(self, 'log_textbox'):
+            if hasattr(self, "log_textbox"):
                 self.log_textbox.configure(
                     fg_color=get_color("BACKGROUND_TERTIARY"),
                     text_color=get_color("TEXT_PRIMARY"),
-                    border_color=get_color("BORDER_DEFAULT")
+                    border_color=get_color("BORDER_DEFAULT"),
                 )
-            
+
             # Force visual refresh
             self.update_idletasks()
-                
+
             logging.debug(f"Activity window theme changed from {old_theme} to {new_theme}")
-            
+
         except Exception as e:
             logging.error(f"Error updating activity window theme: {e}")

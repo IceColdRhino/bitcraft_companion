@@ -15,6 +15,7 @@ from app.models import (
     ClaimLocalState,
     ClaimState,
     ClaimMemberState,
+    ClaimTechState,
     BuildingState,
     PublicProgressiveActionState,
     MarketOrderState,

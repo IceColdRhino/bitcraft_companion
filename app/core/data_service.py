@@ -18,6 +18,7 @@ from .utils import ItemLookupService
 from ..services.notification_service import NotificationService
 from ..services.claim_service import ClaimService
 from ..services.background_processor import BackgroundProcessor
+from ..services.codex_service import CodexService
 from ..client.query_service import QueryService
 from ..models.claim import Claim
 
@@ -95,6 +96,11 @@ class DataService:
             if self.background_processor:
                 logging.info("Shutting down background processor...")
                 self.background_processor.shutdown(wait=True, timeout=10.0)
+
+            # Cleanup codex service
+            if hasattr(self, 'codex_service') and self.codex_service:
+                logging.info("Cleaning up codex service...")
+                self.codex_service.cleanup()
 
             if self.claim_manager:
                 logging.info("Saving claims cache...")
@@ -348,6 +354,10 @@ class DataService:
             item_lookup_service = ItemLookupService(reference_data)
             logging.debug(f"[DataService] ItemLookupService initialized with {item_lookup_service.get_stats()}")
 
+            # Initialize codex service (lazy initialization - no expensive operations)
+            self.codex_service = CodexService(self)
+            logging.debug(f"[DataService] CodexService initialized")
+
             # Initialize processors and message router (subscription-based architecture only)
             services = {
                 "claim_manager": self.claim_manager,
@@ -356,6 +366,7 @@ class DataService:
                 "item_lookup_service": item_lookup_service,
                 "data_service": self,
                 "background_processor": self.background_processor,
+                "codex_service": self.codex_service,
             }
 
             self.processors = [
@@ -504,15 +515,18 @@ class DataService:
             self.claim.claim_id = claim_id
 
             # Update processor services with new claim
-            services = {
-                "claim_manager": self.claim_manager,
-                "client": self.client,
-                "claim": self.claim,
-            }
+            if self.processors:
+                # Preserve all existing services and update only claim-related ones
+                existing_services = self.processors[0].services.copy() if self.processors[0].services else {}
+                existing_services.update({
+                    "claim_manager": self.claim_manager,
+                    "client": self.client,
+                    "claim": self.claim,
+                })
 
-            for processor in self.processors:
-                processor.services = services
-                processor.claim = self.claim
+                for processor in self.processors:
+                    processor.services = existing_services
+                    processor.claim = self.claim
 
             # Restart subscriptions for new claim (this automatically replaces existing subscriptions)
             self._setup_subscriptions_for_current_claim(context="claim_switch")
@@ -671,3 +685,43 @@ class DataService:
         except Exception as e:
             logging.error(f"[DataService] Error during comprehensive data refresh: {e}")
             return False
+    
+    def get_consolidated_inventory(self):
+        """
+        Get consolidated inventory data from the InventoryProcessor.
+        
+        This provides the same processed inventory data that is displayed
+        in the main inventory tab, ensuring consistency across systems.
+        
+        Returns:
+            dict: Consolidated inventory data keyed by item name, or empty dict if unavailable
+        """
+        try:
+            if not self.processors:
+                logging.debug("[DataService] No processors available for inventory access")
+                return {}
+            
+            # Find the InventoryProcessor
+            inventory_processor = None
+            for processor in self.processors:
+                if hasattr(processor, '_consolidate_inventory'): 
+                    inventory_processor = processor
+                    break
+            
+            if not inventory_processor:
+                logging.debug("[DataService] InventoryProcessor not found")
+                return {}
+            
+            # Get consolidated inventory data
+            consolidated_inventory = inventory_processor._consolidate_inventory()
+            
+            if isinstance(consolidated_inventory, dict):
+                logging.debug(f"[DataService] Retrieved consolidated inventory with {len(consolidated_inventory)} items")
+                return consolidated_inventory
+            else:
+                logging.warning(f"[DataService] Unexpected inventory data format: {type(consolidated_inventory)}")
+                return {}
+                
+        except Exception as e:
+            logging.error(f"[DataService] Error accessing consolidated inventory: {e}")
+            return {}

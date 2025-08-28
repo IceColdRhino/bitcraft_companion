@@ -11,7 +11,8 @@ from .base_processor import BaseProcessor
 from app.models import (
     ResourceDesc, ItemListDesc, ItemDesc, CargoDesc, ToolDesc,
     BuildingDesc, BuildingTypeDesc, CraftingRecipeDesc, ExtractionRecipeDesc,
-    ItemConversionRecipeDesc, ClaimTileCost, NpcDesc, BuildingFunctionTypeMappingDesc
+    ItemConversionRecipeDesc, ClaimTileCost, NpcDesc, BuildingFunctionTypeMappingDesc,
+    ClaimTechDesc
 )
 
 
@@ -47,6 +48,7 @@ class ReferenceDataProcessor(BaseProcessor):
             "claim_tile_cost": ClaimTileCost,
             "npc_desc": NpcDesc,
             "building_function_type_mapping_desc": BuildingFunctionTypeMappingDesc,
+            "claim_tech_desc": ClaimTechDesc,
         }
         
         # Process initial reference data loaded via one-off queries

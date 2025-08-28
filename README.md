@@ -2,23 +2,23 @@
 
 A comprehensive desktop application for managing and monitoring your BitCraft game data in real time. BitCraft Companion provides live access to your claim information, inventory management, crafting monitoring, task tracking, and completion notifications through an intuitive tabbed interface.
 
-## 🎮 What It Does
+## What It Does
 
 BitCraft Companion connects directly to BitCraft game servers via WebSocket to provide real-time monitoring of your gameplay data. The application serves as your external command center, helping you manage multiple claims, track crafting progress, monitor inventory, and receive notifications when items are ready—all while you play the game.
 
 ### Core Features
 
-#### 🔐 **Secure Authentication**
+#### **Secure Authentication**
 - **Email-Based Login**: Uses your BitCraft account email for authentication. Nothing is shared externally.
 - **Token Management**: Securely stores authentication tokens using Windows Credential Manager.
 - **Persistent Sessions**: Remembers your login details between sessions.
 
-#### 🏠 **Multi-Claim Management**
+#### **Multi-Claim Management**
 - **Claim Switching**: Seamlessly switch between multiple claims via a dropdown selector.
 - **Real-Time Claim Data**: Live connection to your active BitCraft claim.
 - **Claim Information Header**: Shows current claim name, member count, and connection status.
 
-#### 📊 **Data Presentation**
+#### **Data Presentation**
 - **Logical Keyword Search**: Advanced search system with keywords and comparison operators across all tabs
   - **Keywords**: `item=`, `tier=`, `qty=`, `tag=`, `container=`, `building=`, `crafter=`, `traveler=`, `status=`
   - **Operators**: `=`, `>`, `<`, `>=`, `<=`, `!=` for precise filtering
@@ -32,20 +32,29 @@ BitCraft Companion connects directly to BitCraft game servers via WebSocket to p
 - **Contextual Actions**: Right-click rows for context menus with quick actions, such as exporting filtered data, viewing item details, or jumping to related crafting operations.
 - **Clear & Reset Controls**: Easily reset all filters and sorting with dedicated clear buttons, returning your view to the default state for broad overviews.
 
-#### ⚙️ **Settings**
+#### **Settings**
 - **Data Export**: Easily export your claim inventory data to CSV or JSON formats for external analysis or sharing.
 - **Theme Selection** *(work in progress)*: Switch between Light and Dark themes to match your personal preference or system settings.
 - **Force Refresh**: Instantly reload all claim and inventory data from the server. Use this option if you suspect data is out of sync or want to ensure you have the latest updates.
 - **Notification Controls**: Enable or disable Windows toast notifications for crafting and stamina. Now with custom sounds!
 - **About & Version Info**: View application version, update status, and links to documentation or support.
 
-#### 🔢 **Available Data**
+#### **Codex Planning**
+- **Material Requirements**: Track required materials for tier progression across all professions (Cloth, Metal, Wood, Stone, Leather, Scholar).
+- **Cross-Profession Dependencies**: Understand how materials from different professions interact and support each other.
+- **Inventory Integration**: Automatically calculate reduced requirements based on your current claim inventory.
+- **Cascading Reductions**: Higher-tier materials in inventory reduce lower-tier material needs, optimizing your crafting plans.
+- **Search & Filter**: Find specific materials across all professions with advanced search capabilities.
+- **Progress Monitoring**: Track your advancement towards higher tiers and identify bottlenecks.
+
+#### **Available Data**
 - **Claim Inventory**: View all items stored across your claim, with live updates and instant search/filtering.
 - **Passive Crafting**: Track ongoing passive crafting operations, see timers, progress, and who started each craft.
 - **Active Crafting**: Monitor active crafting projects in real time, including remaining effort and help status.
 - **Traveler's Tasks**: See available traveler tasks, requirements, progress, and refresh timers at a glance.
+- **Codex Planning**: Access comprehensive material requirements for tier progression across all professions with inventory-aware calculations.
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
@@ -76,7 +85,7 @@ BitCraft Companion connects directly to BitCraft game servers via WebSocket to p
 6. **Choose your region** (e.g., bitcraft-1) from the dropdown.
 7. **Start using the features**—your credentials are securely saved for future use.
 
-## 📱 How to Use
+## How to Use
 
 ### Getting Started
 1. **Launch the application** and complete the login process.
@@ -85,7 +94,15 @@ BitCraft Companion connects directly to BitCraft game servers via WebSocket to p
 4. **Use the search bar** for instant filtering across any tab's data.
 5. **Enable notifications** in the Settings window for craft completion alerts.
 
-### 🔍 **Advanced Search Guide**
+### Using the Codex Window
+1. **Access the Codex**: Open from the main window menu bar to view tier-based material requirements.
+2. **Review Requirements**: View comprehensive material lists organized by profession tabs (Cloth, Metal, Wood, Stone, Leather, Scholar).
+3. **Understand Inventory Impact**: Green highlighting shows materials you already have, with reduced requirements calculated automatically.
+4. **Cross-Profession Planning**: See how materials from one profession support progression in others.
+5. **Search Materials**: Use the integrated search to find specific materials across all professions.
+6. **Track Progress**: Monitor your advancement and identify which materials to prioritize for efficient progression.
+
+### **Advanced Search Guide**
 
 BitCraft Companion features a powerful keyword-based search system that lets you find exactly what you're looking for across all tabs.
 
@@ -137,6 +154,9 @@ Each tab supports different keywords based on available data:
 **Traveler Tasks:**
 - `item=`, `tier=`, `qty=`, `tag=`, `traveler=`, `status=`
 
+**Codex Window:**
+- `material=`, `tier=`, `quantity=`, `need=`, `have=`
+
 #### **Saving and Loading Queries**
 - **Save Queries**: You can save your search queries for later use, making it easy to reuse complex filters.
 - **Load/Delete Queries**: Access saved queries from the search bar menu to quickly load or delete them as needed.
@@ -147,7 +167,7 @@ Each tab supports different keywords based on available data:
 - **Live Updates**: Results update in real-time as your game data changes
 - **Escape Key**: Press `Escape` to quickly clear the search field
 
-## ⚙️ Configuration
+## Configuration
 
 ### User Data
 
@@ -166,8 +186,20 @@ Sensitive data is stored in Windows Credential Manager:
 - Email addresses
 - Access credentials
 
-### ❓ Frequently Asked Questions
-#### 📋 Why are my tables not loading?
+### Frequently Asked Questions
+
+#### How does the Codex calculate my material requirements?
+
+The Codex uses a tier-based progression system that calculates all materials needed to advance from your current tier to your target tier across all professions. 
+
+**Key Features:**
+- **Cascading Inventory Reductions**: Higher-tier materials in your inventory automatically reduce requirements for lower-tier materials they would have consumed
+- **Live Inventory Integration**: Requirements update automatically as your claim inventory changes
+- **Tier-Based Logic**: Only materials of equal or higher tier can reduce requirements for lower-tier materials
+
+**Example**: If you have 10 T4 Refined Fine Cloth in inventory, this reduces your T3, T2, and T1 cloth material requirements, but does not affect T5 or T6 material needs.
+
+#### Why are my tables not loading?
 
 This issue is still under investigation. Current findings suggest that slow or unstable internet connections can interrupt the WebSocket connection while the application loads reference data. If your tables are not loading, try waiting a few minutes—data may eventually appear once the connection stabilizes.
 
@@ -177,7 +209,7 @@ This issue is still under investigation. Current findings suggest that slow or u
 - Avoid heavy network usage during application startup.
 - If problems continue, report the issue with details about your network environment.
 
-#### 💬 Why aren't my notifications working?
+#### Why aren't my notifications working?
 
 **Problem:**  
 Windows Focus Assist (Do Not Disturb mode) may automatically enable during gaming, blocking notifications.
@@ -199,7 +231,7 @@ Windows Focus Assist (Do Not Disturb mode) may automatically enable during gamin
 
 ---
 
-#### 🔄 Why aren't my Traveler's Tasks updating?
+#### Why aren't my Traveler's Tasks updating?
 
 BitCraft Companion syncs Traveler's Tasks in real time via the game servers. If the game isn't running or you're logged in with a different account, updates won't appear.
 
@@ -213,13 +245,13 @@ Use "Force Refresh" in the Settings menu to reload claim and task data.
 
 ---
 
-#### 🌗 Why doesn't the Light theme look right?
+#### Why doesn't the Light theme look right?
 
 The Light theme is a work in progress. Some UI elements and colors may not display correctly. Improvements are planned for future releases.
 
 ---
 
-#### ⚠️ Other Common Issues
+#### Other Common Issues
 
 **Windows Security Scanning**
 - PyInstaller executables may trigger Windows Defender scans on first run.
@@ -236,5 +268,5 @@ The Light theme is a work in progress. Some UI elements and colors may not displ
 - Firewalls may prevent BitCraft Companion from accessing the internet.
 - BitCraft server maintenance can temporarily prevent data loading.
 
-## 📝 License
+## License
 This project is licensed under the MIT License. See the [LICENSE](./LICENSE) file for details.

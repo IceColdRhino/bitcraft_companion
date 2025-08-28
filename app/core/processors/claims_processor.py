@@ -6,7 +6,7 @@ import json
 import logging
 
 from .base_processor import BaseProcessor
-from app.models import ClaimLocalState, ClaimState, ClaimMemberState
+from app.models import ClaimLocalState, ClaimState, ClaimMemberState, ClaimTechState
 
 
 class ClaimsProcessor(BaseProcessor):
@@ -19,7 +19,7 @@ class ClaimsProcessor(BaseProcessor):
 
     def get_table_names(self):
         """Return list of table names this processor handles."""
-        return ["claim_local_state", "claim_state", "claim_member_state"]
+        return ["claim_local_state", "claim_state", "claim_member_state", "claim_tech_state"]
 
     def process_transaction(self, table_update, reducer_name, timestamp):
         """
@@ -85,6 +85,25 @@ class ClaimsProcessor(BaseProcessor):
                     # For membership changes, do a full refresh since it affects many things
                     self._refresh_claim_info()
                     return
+                
+                # Process claim_tech_state updates (tier progression)
+                elif table_name == "claim_tech_state":
+                    for insert_str in inserts:
+                        try:
+                            # Parse JSON string to dict first, then use dataclass
+                            data = json.loads(insert_str)
+                            claim_tech = ClaimTechState.from_dict(data)
+                            if claim_tech:
+                                # Only process updates for the current claim
+                                claim = self.services.get("claim")
+                                if claim and claim.claim_id and str(claim_tech.entity_id) == str(claim.claim_id):
+                                    # Store claim tech data for access by other services
+                                    if not hasattr(self, '_claim_tech_data'):
+                                        self._claim_tech_data = {}
+                                    self._claim_tech_data[claim_tech.entity_id] = claim_tech
+                                    logging.debug(f"Updated claim tech state for claim {claim_tech.entity_id}: T{claim_tech.get_current_tier()}")
+                        except Exception as e:
+                            logging.debug(f"Failed to parse claim_tech_state transaction: {e}")
 
             # Send incremental update if we have changes
             if claim_updates:
@@ -124,6 +143,10 @@ class ClaimsProcessor(BaseProcessor):
             elif table_name == "claim_local_state":
                 # Store claim local details (treasury, supplies, etc.)
                 self._process_claim_local_data(table_rows)
+            
+            elif table_name == "claim_tech_state":
+                # Store claim tech details (tier progression)
+                self._process_claim_tech_data(table_rows)
 
             # Send updated claim info to UI
             self._send_claim_info_update()
@@ -489,6 +512,43 @@ class ClaimsProcessor(BaseProcessor):
         except Exception as e:
             logging.error(f"Error sending incremental claim update: {e}")
 
+    def _process_claim_tech_data(self, claim_tech_rows):
+        """
+        Process claim_tech_state data to store tier progression information.
+        """
+        try:
+            # Initialize storage for claim tech data
+            if not hasattr(self, '_claim_tech_data'):
+                self._claim_tech_data = {}
+            
+            for row in claim_tech_rows:
+                try:
+                    # Create ClaimTechState dataclass instance
+                    claim_tech = ClaimTechState.from_dict(row)
+                    self._claim_tech_data[claim_tech.entity_id] = claim_tech
+                    logging.debug(f"Processed claim tech state for claim {claim_tech.entity_id}: T{claim_tech.get_current_tier()}")
+                except (ValueError, TypeError) as e:
+                    logging.debug(f"Failed to process claim tech row: {e}")
+                    # Fallback to manual processing  
+                    entity_id = row.get("entity_id")
+                    if entity_id:
+                        self._claim_tech_data[entity_id] = ClaimTechState.from_dict(row)
+            
+            logging.debug(f"Stored claim tech data for {len(self._claim_tech_data)} claims")
+            
+        except Exception as e:
+            logging.error(f"Error processing claim tech data: {e}")
+
+    def get_claim_tech_state(self, claim_id):
+        """
+        Get ClaimTechState for a specific claim.
+        
+        Used by other services (like CodexService) to access claim tech data.
+        """
+        if hasattr(self, '_claim_tech_data') and self._claim_tech_data:
+            return self._claim_tech_data.get(claim_id)
+        return None
+
     def clear_cache(self):
         """Clear cached claims data when switching claims."""
         super().clear_cache()
@@ -502,3 +562,6 @@ class ClaimsProcessor(BaseProcessor):
 
         if hasattr(self, "_claim_local_details"):
             self._claim_local_details.clear()
+            
+        if hasattr(self, "_claim_tech_data"):
+            self._claim_tech_data.clear()

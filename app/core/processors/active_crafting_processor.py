@@ -1,6 +1,7 @@
 """
 Active crafting processor for handling progressive_action_state table updates.
 """
+
 import json
 import logging
 import re
@@ -198,7 +199,7 @@ class ActiveCraftingProcessor(BaseProcessor):
                             # Handle both array format [entity_id, building_entity_id, owner_entity_id] and object format
                             progressive_action_entity_id = None
                             building_entity_id = None
-                            
+
                             if isinstance(insert_data, list) and len(insert_data) >= 3:
                                 # Array format: [entity_id, building_entity_id, owner_entity_id]
                                 progressive_action_entity_id = insert_data[0]  # entity_id is the progressive action ID
@@ -239,7 +240,7 @@ class ActiveCraftingProcessor(BaseProcessor):
 
                             # Handle both array format [entity_id, building_entity_id, owner_entity_id] and object format
                             progressive_action_entity_id = None
-                            
+
                             if isinstance(delete_data, list) and len(delete_data) >= 3:
                                 # Array format: [entity_id, building_entity_id, owner_entity_id]
                                 progressive_action_entity_id = delete_data[0]  # entity_id is the progressive action ID
@@ -606,20 +607,31 @@ class ActiveCraftingProcessor(BaseProcessor):
                             base_quantity = item_stack[1]
                             total_quantity = base_quantity * craft_count
 
-                            # Look up item details using compound key system
-                            found_items = self.item_lookup_service.find_items_by_id(item_id)
-                            
+                            # Look up item details with preference for item_desc (crafting stations produce items, not resources)
+                            found_items = self.item_lookup_service.find_items_by_id_preferred_source(item_id, "item_desc")
+
                             if found_items:
-                                # Use first found item (compound key system prevents overwrites)
+                                # Use first found item (prevents items like ancient texts overwriting other items)
                                 item_info = found_items[0]
                                 item_name = item_info.get("name", f"Unknown Item {item_id}")
                                 item_tier = item_info.get("tier", 0)
                                 item_tag = item_info.get("tag", "")
-                                
-                                # Log when there are multiple items for debugging
+                                source_table = item_info.get("_source_table", "unknown")
+
+                                # Validate that active crafting is not producing resources
+                                if source_table == "resource_desc":
+                                    logging.warning(
+                                        f"[ActiveCraftingProcessor] Recipe {recipe_id} claims to produce resource '{item_name}' (ID {item_id}) - this should not happen! Crafting stations cannot produce resources."
+                                    )
+
+                                # Log when there are ID conflicts for debugging
                                 if len(found_items) > 1:
-                                    all_names = [item.get("name", "") for item in found_items]
-                                    logging.debug(f"[ActiveCraftingProcessor] Item {item_id} has multiple matches: {all_names}, using: '{item_name}'")
+                                    all_names_sources = [
+                                        (item.get("name", ""), item.get("_source_table", "")) for item in found_items
+                                    ]
+                                    logging.info(
+                                        f"[ActiveCraftingProcessor] Item {item_id} has ID conflict: {all_names_sources}, using '{item_name}' from {source_table}"
+                                    )
                             else:
                                 item_name = f"Unknown Item {item_id}"
                                 item_tier = 0
@@ -806,7 +818,6 @@ class ActiveCraftingProcessor(BaseProcessor):
         except Exception as e:
             logging.error(f"Error formatting hierarchy for UI: {e}")
             return {}
-
 
     def _format_crafting_for_ui(self, consolidated_crafting):
         """
@@ -1023,7 +1034,7 @@ class ActiveCraftingProcessor(BaseProcessor):
                             item_id = first_item[0]
                             # Use compound key system for item lookup
                             found_items = self.item_lookup_service.find_items_by_id(item_id)
-                            
+
                             if found_items:
                                 # Use first found item (compound key system prevents overwrites)
                                 item_info = found_items[0]

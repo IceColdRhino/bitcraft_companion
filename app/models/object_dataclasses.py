@@ -3,7 +3,7 @@ import logging
 import time
 from dataclasses import dataclass
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Optional, Dict
 
 
 @dataclass
@@ -1569,6 +1569,76 @@ class CharacterStatsState:
                 # Then the app wouldn't necessarily need immediate maintenance in the case of an update
                 logging.error(f"[CharacterStatsState.values_to_dict] Expected list length 54, got {len(self.values)}")
 
+@dataclass
+class ClaimTechState:
+    """
+    Data class for claim_tech_state from SpacetimeDB.
+
+    Contains the current technology state of a claim, including learned techs
+    and research progress.
+    """
+
+    entity_id: int
+    learned: List[int] = None  # Contains tier markers and tech IDs: [1, 200, 300, 400, 500] = T5 claim
+    researching: int = 0
+    start_timestamp: Optional[Dict] = None
+    scheduled_id: Optional[List] = None
+
+    def __post_init__(self):
+        """Initialize default values for mutable fields."""
+        if self.learned is None:
+            self.learned = []
+        if self.start_timestamp is None:
+            self.start_timestamp = {"__timestamp_micros_since_unix_epoch__": 0}
+        if self.scheduled_id is None:
+            self.scheduled_id = [1, {}]
+
+    @classmethod
+    def from_dict(cls, data: Dict) -> "ClaimTechState":
+        """Create ClaimTechState from dictionary data."""
+        return cls(
+            entity_id=data.get("entity_id", 0),
+            learned=data.get("learned", []),
+            researching=data.get("researching", 0),
+            start_timestamp=data.get("start_timestamp", {"__timestamp_micros_since_unix_epoch__": 0}),
+            scheduled_id=data.get("scheduled_id", [1, {}]),
+        )
+
+    def get_current_tier(self) -> int:
+        """
+        Extract current tier from learned array.
+
+        Tier markers: 200=T2, 300=T3, 400=T4, 500=T5, etc.
+        Returns the highest tier achieved.
+        """
+        if not self.learned:
+            return 1  # Default to T1 if no techs learned
+
+        # Find the highest tier marker in the learned array
+        # Tier markers: 200=T2, 300=T3, 400=T4, 500=T5, 600=T6, etc.
+        tier_markers = [200, 300, 400, 500, 600, 700, 800, 900, 1000]  # T2-T10
+        current_tier = 1  # Default to T1
+
+        for tier_value in tier_markers:
+            if tier_value in self.learned:
+                current_tier = tier_value // 100  # 200 -> T2, 300 -> T3, 600 -> T6, etc.
+
+        return current_tier
+
+    def get_next_tier(self) -> int:
+        """Get the next tier this claim is working towards."""
+        current_tier = self.get_current_tier()
+        return min(current_tier + 1, 10)  # Cap at T10
+
+    def to_dict(self) -> Dict:
+        """Convert to dictionary format."""
+        return {
+            "entity_id": self.entity_id,
+            "learned": self.learned,
+            "researching": self.researching,
+            "start_timestamp": self.start_timestamp,
+            "scheduled_id": self.scheduled_id,
+        }
 
 # ==============================================================================
 # REFERENCE DATA DATACLASSES
@@ -2417,7 +2487,134 @@ class ItemListDesc:
     def to_dict(self) -> dict:
         """Convert to dictionary format for backward compatibility."""
         return {
+            "entity_id": self.entity_id,
+            "player_entity_id": self.entity_id,  # Include both for compatibility
+            "stamina": self.stamina,
+            "current": self.stamina,  # Backward compatibility
+            "last_stamina_decrease_timestamp": self.last_stamina_decrease_timestamp,
+        }
+
+    def is_full(self, max_stamina: float = 300.0) -> bool:
+        """Check if stamina is at maximum (default max 300)."""
+        return self.stamina >= max_stamina
+
+    def get_percentage(self, max_stamina: float = 300.0) -> float:
+        """Get stamina as percentage of maximum (default max 300)."""
+        if max_stamina <= 0:
+            return 0.0
+        return (self.stamina / max_stamina) * 100.0
+
+    def is_low(self, max_stamina: float = 300.0, threshold: float = 20.0) -> bool:
+        """Check if stamina is below threshold percentage."""
+        return self.get_percentage(max_stamina) < threshold
+
+    def get_timestamp_seconds(self) -> float:
+        """Convert timestamp from microseconds to seconds."""
+        return self.last_stamina_decrease_timestamp / 1_000_000.0
+    
+@dataclass
+class ClaimTechDesc:
+    """
+    Data class for claim_tech_desc from SpacetimeDB.
+
+    Contains the description and requirements for claim tier upgrades.
+    """
+
+    id: int
+    description: str = ""  # "Tier 6"
+    tier: int = 0  # 6
+    supplies_cost: int = 0  # 15000
+    research_time: int = 0
+    requirements: List[int] = None  # [500] - required previous tier
+    input: List = None  # [[codex_id, quantity, ...]] - required codex items
+    members: int = 0
+    area: int = 0
+    supplies: int = 0
+    xp_to_mint_hex_coin: int = 0
+
+    def __post_init__(self):
+        """Initialize default values for mutable fields."""
+        if self.requirements is None:
+            self.requirements = []
+        if self.input is None:
+            self.input = []
+
+    @classmethod
+    def from_dict(cls, data: Dict) -> "ClaimTechDesc":
+        """Create ClaimTechDesc from dictionary data."""
+        return cls(
+            id=data.get("id", 0),
+            description=data.get("description", ""),
+            tier=data.get("tier", 0),
+            supplies_cost=data.get("supplies_cost", 0),
+            research_time=data.get("research_time", 0),
+            requirements=data.get("requirements", []),
+            input=data.get("input", []),
+            members=data.get("members", 0),
+            area=data.get("area", 0),
+            supplies=data.get("supplies", 0),
+            xp_to_mint_hex_coin=data.get("xp_to_mint_hex_coin", 0),
+        )
+
+    @classmethod
+    def from_array(cls, data: list) -> "ClaimTechDesc":
+        """Create ClaimTechDesc from transaction array format."""
+        if not isinstance(data, list):
+            raise ValueError(f"ClaimTechDesc.from_array requires list, got: {type(data)}")
+        
+        if len(data) < 11:
+            raise ValueError(f"ClaimTechDesc requires array with at least 11 elements, got {len(data)}")
+        
+        return cls(
+            id=data[0] if len(data) > 0 else 0,
+            description=data[1] if len(data) > 1 else "",
+            tier=data[2] if len(data) > 2 else 0,
+            supplies_cost=data[3] if len(data) > 3 else 0,
+            research_time=data[4] if len(data) > 4 else 0,
+            requirements=data[5] if len(data) > 5 and isinstance(data[5], list) else [],
+            input=data[6] if len(data) > 6 and isinstance(data[6], list) else [],
+            members=data[7] if len(data) > 7 else 0,
+            area=data[8] if len(data) > 8 else 0,
+            supplies=data[9] if len(data) > 9 else 0,
+            xp_to_mint_hex_coin=data[10] if len(data) > 10 else 0,
+        )
+
+    def get_required_codex_info(self) -> tuple[int, int]:
+        """
+        Extract (codex_id, quantity) from input array.
+
+        Input format: [[codex_id, quantity, [...], [...]]]
+        Returns: (codex_id, quantity) or (0, 0) if no codex required
+        """
+        if not self.input or not isinstance(self.input, list):
+            return (0, 0)
+
+        for input_item in self.input:
+            if isinstance(input_item, list) and len(input_item) >= 2:
+                codex_id = input_item[0] if isinstance(input_item[0], int) else 0
+                quantity = input_item[1] if isinstance(input_item[1], int) else 0
+                return (codex_id, quantity)
+
+        return (0, 0)
+
+    def get_tier_name(self) -> str:
+        """Get a clean tier name from description."""
+        if self.description:
+            return self.description
+        return f"Tier {self.tier}"
+
+    def to_dict(self) -> Dict:
+        """Convert to dictionary format."""
+        return {
             "id": self.id,
-            "name": self.name,
-            "possibilities": self.possibilities
+            "description": self.description,
+            "tier": self.tier,
+            "supplies_cost": self.supplies_cost,
+            "research_time": self.research_time,
+            "requirements": self.requirements,
+            "input": self.input,
+            "members": self.members,
+            "area": self.area,
+            "supplies": self.supplies,
+            "xp_to_mint_hex_coin": self.xp_to_mint_hex_coin,
         }

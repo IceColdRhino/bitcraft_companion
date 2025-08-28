@@ -100,6 +100,9 @@ class BaseProcessor(ABC):
             if timestamp is not None:
                 update["timestamp"] = timestamp
 
+            logging.info(
+                f"[BaseProcessor] Queuing {update_type} message with data size: {len(data) if isinstance(data, (dict, list)) else 'unknown'}"
+            )
             self.data_queue.put(update)
 
         except Exception as e:

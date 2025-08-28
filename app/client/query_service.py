@@ -100,6 +100,7 @@ class QueryService:
             logging.error(f"Error fetching claim members: {e}")
             return []
 
+
     def get_reference_data(self) -> Dict:
         """
         Fetch static reference data via one-off queries with caching.
@@ -136,6 +137,7 @@ class QueryService:
             "SELECT * FROM item_conversion_recipe_desc;",
             "SELECT * FROM claim_tile_cost;",
             "SELECT * FROM npc_desc;",
+            "SELECT * FROM claim_tech_desc;",
         ]
 
         reference_data = {}
@@ -282,6 +284,12 @@ class QueryService:
                 "FROM passive_craft_state "
                 "JOIN building_state ON passive_craft_state.building_entity_id = building_state.entity_id "
                 "WHERE building_state.claim_entity_id = '{claim_id}';".format(claim_id=claim_id)
+            ),
+            # Get claim tech state for the claim
+            (
+                "SELECT claim_tech_state.* "
+                "FROM claim_tech_state "
+                "WHERE claim_tech_state.entity_id = '{claim_id}';".format(claim_id=claim_id)
             ),
             # Get buy order state for orders placed within the claim
             (

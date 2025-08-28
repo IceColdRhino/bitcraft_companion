@@ -119,7 +119,7 @@ class SaveSearchDialog(ctk.CTkToplevel):
         self.save_button.pack(side="right")
     
     def _center_on_parent(self):
-        """Center the dialog on its parent window."""
+        """Center the dialog on its parent window with screen boundary checks."""
         self.update_idletasks()
         
         parent = self.master
@@ -131,8 +131,25 @@ class SaveSearchDialog(ctk.CTkToplevel):
         dialog_width = self.winfo_width()
         dialog_height = self.winfo_height()
         
+        # Calculate centered position
         x = parent_x + (parent_width - dialog_width) // 2
         y = parent_y + (parent_height - dialog_height) // 2
+        
+        # Ensure dialog stays within screen bounds
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        
+        # Adjust x position if dialog would go off-screen
+        if x < 0:
+            x = 10
+        elif x + dialog_width > screen_width:
+            x = screen_width - dialog_width - 10
+        
+        # Adjust y position if dialog would go off-screen
+        if y < 0:
+            y = 10
+        elif y + dialog_height > screen_height:
+            y = screen_height - dialog_height - 10
         
         self.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
     
@@ -416,7 +433,7 @@ class LoadSearchDialog(ctk.CTkToplevel):
         pass
     
     def _center_on_parent(self):
-        """Center the dialog on its parent window."""
+        """Center the dialog on its parent window with screen boundary checks."""
         self.update_idletasks()
         
         parent = self.master
@@ -428,8 +445,25 @@ class LoadSearchDialog(ctk.CTkToplevel):
         dialog_width = self.winfo_width()
         dialog_height = self.winfo_height()
         
+        # Calculate centered position
         x = parent_x + (parent_width - dialog_width) // 2
         y = parent_y + (parent_height - dialog_height) // 2
+        
+        # Ensure dialog stays within screen bounds
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        
+        # Adjust x position if dialog would go off-screen
+        if x < 0:
+            x = 10
+        elif x + dialog_width > screen_width:
+            x = screen_width - dialog_width - 10
+        
+        # Adjust y position if dialog would go off-screen
+        if y < 0:
+            y = 10
+        elif y + dialog_height > screen_height:
+            y = screen_height - dialog_height - 10
         
         self.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
     

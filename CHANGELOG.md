@@ -3,6 +3,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.36]
+### Added
+- Added Codex!
+- Implement claim switch handling in CodexWindow and MainWindow for improved user experience
+- Enhance cascading inventory calculations with tier-based filtering and consolidated inventory support
+- Enhance search functionality with text change detection to optimize filtering in crafting tabs
+- Update refined status display and implement codex name retrieval for improved clarity
+- Implement caching for codex requirements and inventory to optimize performance and reduce redundant calls
+- Enhance CodexProfessionTab with bold tags for completed and incomplete materials based on direct dependency status
+- Update version to 0.2.35 and enhance data inclusion in bitcraft_companion.spec
+
+### Refactored
+- Simplify comments for claim service updates and improve shutdown process in main window
+- Improve code consistency and readability in test_saved_search_service.py
+- Clean up code formatting and improve readability in CodexService
+- Simplify CodexService documentation and improve inventory hash generation logic
+
 ## [0.2.34]
 ### Added
 - New custom sounds for notifications (credit to Blizzard for job's done sound from Warcraft II).

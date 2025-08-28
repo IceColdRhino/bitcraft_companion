@@ -6,13 +6,22 @@ from tkinter import Menu, ttk
 
 from app.ui.components.filter_popup import FilterPopup
 from app.ui.components.optimized_table_mixin import OptimizedTableMixin
+from app.ui.mixins.async_rendering_mixin import AsyncRenderingMixin
 from app.ui.styles import TreeviewStyles
 from app.ui.themes import get_color, register_theme_callback
 from app.services.search_parser import SearchParser
 
 
-class TravelerTasksTab(ctk.CTkFrame, OptimizedTableMixin):
-    """The tab for displaying traveler tasks with expandable traveler groups."""
+class TravelerTasksTab(ctk.CTkFrame, OptimizedTableMixin, AsyncRenderingMixin):
+    """
+    The tab for displaying traveler tasks with expandable traveler groups.
+    
+    THREADING MODEL:
+    - Background processing: Data transformation and filtering (large datasets)
+    - Main thread: Hierarchical tree insertion, UI updates, expansion management
+    - SPECIAL NOTE: Uses direct rendering for hierarchical data (parent-child relationships)
+    - Uses .grid() layout manager exclusively (never mix with .pack())
+    """
 
     def __init__(self, master, app):
         super().__init__(master, fg_color="transparent")
@@ -34,30 +43,27 @@ class TravelerTasksTab(ctk.CTkFrame, OptimizedTableMixin):
         # Initialize search parser
         self.search_parser = SearchParser()
 
-        # Track expansion state for better user experience
         self.has_had_first_load = False
-        self.expansion_state = set()  # Store traveler IDs that should be expanded
+        self.expansion_state = set()
 
         self._create_widgets()
         self._create_context_menu()
         
-        # Initialize optimization features after UI is created
         self.__init_optimization__(max_workers=2, max_cache_size_mb=60)
+        
+        
+        self._tab_name = "Traveler Tasks"
 
     def _create_widgets(self):
         """Creates the styled Treeview and its scrollbars."""
         style = ttk.Style()
         
-        # Apply centralized Treeview styling
         TreeviewStyles.apply_treeview_style(style)
         
-        # Apply centralized scrollbar styling and get style names
         self.v_scrollbar_style, self.h_scrollbar_style = TreeviewStyles.apply_scrollbar_style(style, "TravelerTasks")
 
-        # Create the Treeview with support for child items
         self.tree = ttk.Treeview(self, columns=self.headers, show="tree headings", style="Treeview")
 
-        # Apply common tree tags using centralized styling
         TreeviewStyles.configure_tree_tags(self.tree)
         
         # Configure task status tags
@@ -195,10 +201,8 @@ class TravelerTasksTab(ctk.CTkFrame, OptimizedTableMixin):
                 unique_travelers.add(traveler_name)
             return sorted(list(unique_travelers))
         elif header.lower() == "status":
-            # Special completion status values
             return ["✅", "❌"]
         elif header.lower() == "item":
-            # Extract unique required item names from all tasks
             unique_items = set()
             for row in self.all_data:
                 operations = row.get("operations", [])
@@ -208,7 +212,6 @@ class TravelerTasksTab(ctk.CTkFrame, OptimizedTableMixin):
                         unique_items.add(required_item)
             return sorted(list(unique_items))
         elif header.lower() == "tier":
-            # Extract unique tier values from all tasks
             unique_tiers = set()
             for row in self.all_data:
                 operations = row.get("operations", [])
@@ -218,7 +221,6 @@ class TravelerTasksTab(ctk.CTkFrame, OptimizedTableMixin):
                         unique_tiers.add(str(tier))
             return sorted(list(unique_tiers), key=lambda x: int(x) if x.isdigit() else 0)
         elif header.lower() == "quantity":
-            # Extract unique quantities
             unique_quantities = set()
             for row in self.all_data:
                 operations = row.get("operations", [])
@@ -228,7 +230,6 @@ class TravelerTasksTab(ctk.CTkFrame, OptimizedTableMixin):
                         unique_quantities.add(str(quantity))
             return sorted(list(unique_quantities), key=lambda x: int(x) if x.isdigit() else 0)
         elif header.lower() == "tag":
-            # Extract unique item tags from all tasks
             unique_tags = set()
             for row in self.all_data:
                 operations = row.get("operations", [])
@@ -280,7 +281,6 @@ class TravelerTasksTab(ctk.CTkFrame, OptimizedTableMixin):
         """Process traveler tasks data update with background processing for large datasets."""
         try:
             data_size = len(new_data) if new_data else 0
-            logging.debug(f"[TravelerTasksTab] Updating data - {data_size} traveler groups")
 
             # Use background processing for large datasets
             if isinstance(new_data, list) and len(new_data) > 20:
@@ -312,7 +312,13 @@ class TravelerTasksTab(ctk.CTkFrame, OptimizedTableMixin):
         try:
             processed_data = result["processed_data"]
             self.all_data = processed_data
-            logging.info(f"[TravelerTasksTab] Background processing completed - {len(processed_data)} traveler groups")
+            
+            # Notify MainWindow that data loading completed (for loading overlay detection)
+            if hasattr(self.app, 'is_loading') and self.app.is_loading:
+                if hasattr(self.app, 'received_data_types'):
+                    self.app.received_data_types.add("tasks")
+                    if hasattr(self.app, '_check_all_data_loaded'):
+                        self.app._check_all_data_loaded()
             
             self.apply_filter()
                 
@@ -636,18 +642,30 @@ class TravelerTasksTab(ctk.CTkFrame, OptimizedTableMixin):
     def _row_matches_search(self, row, search_term):
         """Checks if a row matches the search term, including task data."""
         # Check main row data
-        main_fields = ["traveler", "completed", "status"]
+        main_fields = ["traveler", "completed"]
         for field in main_fields:
             if search_term in str(row.get(field, "")).lower():
                 return True
+        
+        # Check status with both emoji and text formats
+        status = str(row.get("status", "")).lower()
+        status_text = "done" if status == "✅" else "pending" if status == "❌" else status
+        if search_term in status or search_term in status_text:
+            return True
 
         # Check individual task data (now includes tier)
         operations = row.get("operations", [])
         for operation in operations:
-            operation_fields = ["task_description", "item", "tier", "quantity", "tag", "status"]
+            operation_fields = ["task_description", "item", "tier", "quantity", "tag"]
             for field in operation_fields:
                 if search_term in str(operation.get(field, "")).lower():
                     return True
+            
+            # Check operation status with both formats
+            op_status = str(operation.get("status", "")).lower()
+            op_status_text = "done" if op_status == "✅" else "pending" if op_status == "❌" else op_status
+            if search_term in op_status or search_term in op_status_text:
+                return True
 
         return False
 
@@ -738,28 +756,19 @@ class TravelerTasksTab(ctk.CTkFrame, OptimizedTableMixin):
             self.tree.heading(header, text=text + filter_indicator)
 
     def render_table(self):
-        """Renders table with optimization support for large datasets."""
+        """Renders table using the working hierarchical insertion logic."""
         try:
-            logging.debug(f"[TravelerTasksTab] Starting table render - {len(self.filtered_data)} traveler groups")
 
             # Save current expansion state before clearing
             self._save_current_expansion_state()
 
-            # Use lazy loading for large datasets
-            if len(self.filtered_data) > self._lazy_load_threshold:
-                self._render_lazy_loading(self.filtered_data)
-            else:
-                # Direct rendering for smaller datasets
-                self._render_direct(self.filtered_data)
+            # Always use direct rendering - it works with the hierarchical data structure
+            self._render_direct(self.filtered_data)
 
-            # Mark that we've had our first load
-            if not self.has_had_first_load:
-                self.has_had_first_load = True
-
-            logging.debug(f"[TravelerTasksTab] Table render complete")
 
         except Exception as e:
             logging.error(f"[TravelerTasksTab] Critical error during table render: {e}")
+    
 
     def _render_direct(self, data):
         """Direct rendering for smaller datasets."""
@@ -767,8 +776,19 @@ class TravelerTasksTab(ctk.CTkFrame, OptimizedTableMixin):
         self.tree.delete(*self.tree.get_children())
         self._ui_item_cache.clear()
 
+        if not data:
+            # Show empty message
+            empty_item = self.tree.insert("", "end", values=["No traveler tasks available", "", "", "", "", ""])
+            self.tree.item(empty_item, tags=("empty",))
+            return
+
         for row_data in data:
             self._insert_tree_item(row_data)
+            
+        # Mark that we've had our first load
+        if not self.has_had_first_load:
+            self.has_had_first_load = True
+    
 
     def _save_current_expansion_state(self):
         """Save the current expansion state of traveler groups."""
@@ -822,9 +842,10 @@ class TravelerTasksTab(ctk.CTkFrame, OptimizedTableMixin):
     def destroy(self):
         """Clean up resources when tab is destroyed."""
         try:
+            # Clean up optimization resources
             self.optimization_shutdown()
         except Exception as e:
-            logging.error(f"Error during optimization shutdown: {e}")
+            logging.error(f"Error during tab cleanup: {e}")
         super().destroy()
 
     def _get_comparison_fields(self) -> List[str]:
@@ -854,9 +875,10 @@ class TravelerTasksTab(ctk.CTkFrame, OptimizedTableMixin):
         # Create a stable identifier for expansion tracking
         expansion_key = f"traveler_{traveler_id}_{traveler_name}"
 
-        # Prepare main row values for new column structure
+        # Prepare main row values for new column structure with searchable text status
         item_with_completion = f"Tasks ({completed_summary} completed)"
-        values = [traveler_name, item_with_completion, "", "", "", completion_status]
+        status_text = "DONE" if completion_status == "✅" else "PENDING" 
+        values = [traveler_name, item_with_completion, "", "", "", status_text]
 
         # Determine tag based on completion status
         if completion_status == "✅":
@@ -884,3 +906,27 @@ class TravelerTasksTab(ctk.CTkFrame, OptimizedTableMixin):
 
         item_key = self._generate_item_key(item_data)
         self._ui_item_cache[item_key] = parent_id
+    
+    def _render_task_row(self, parent_id, task_data):
+        """Renders an individual task as a child row with searchable text status."""
+        task_description = task_data.get("task_description", "Unknown Task")
+        item = task_data.get("item", "")
+        tier = task_data.get("tier", 0)
+        quantity = task_data.get("quantity", "")
+        tag = task_data.get("tag", "")
+        completion_status = task_data.get("status", "❌")
+
+        # Convert status to searchable text
+        status_text = "DONE" if completion_status == "✅" else "PENDING"
+
+        # Prepare child values for new column structure
+        child_values = ["", item, quantity, str(tier) if tier > 0 else "", tag, status_text]
+
+        # Determine child tag
+        if completion_status == "✅":
+            child_tag = ("child", "child_completed")
+        else:
+            child_tag = ("child", "child_incomplete")
+
+        # Insert the child row
+        self.tree.insert(parent_id, "end", values=child_values, tags=child_tag)

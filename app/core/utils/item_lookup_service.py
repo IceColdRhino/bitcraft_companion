@@ -261,6 +261,67 @@ class ItemLookupService:
         except Exception as e:
             logging.error(f"ItemLookupService: Error getting sources for item {item_id}: {e}")
             return []
+    
+    def find_items_by_id_preferred_source(self, item_id: int, preferred_source: str = "item_desc") -> List[Dict]:
+        """
+        Find items with the given ID, prioritizing a specific source table.
+        
+        This method addresses ID conflicts by allowing callers to specify which
+        table should be preferred when the same ID exists in multiple tables.
+        
+        Args:
+            item_id: The item ID to search for
+            preferred_source: The preferred table source ("item_desc", "cargo_desc", "resource_desc")
+            
+        Returns:
+            List of items with preferred source first, followed by other sources
+        """
+        try:
+            if self._item_lookups is None:
+                return []
+            
+            preferred_items = []
+            other_items = []
+            
+            # First look for preferred source
+            preferred_key = (item_id, preferred_source)
+            if preferred_key in self._item_lookups:
+                preferred_item = self._item_lookups[preferred_key]
+                # Add source information for debugging
+                preferred_item_with_source = preferred_item.copy()
+                preferred_item_with_source['_source_table'] = preferred_source
+                preferred_items.append(preferred_item_with_source)
+                logging.debug(f"ItemLookupService: Found {preferred_source} item {item_id}: '{preferred_item.get('name', 'Unknown')}'")
+            
+            # Then look for other sources
+            for source in ["item_desc", "cargo_desc", "resource_desc"]:
+                if source == preferred_source:
+                    continue  # Already handled above
+                    
+                compound_key = (item_id, source)
+                if compound_key in self._item_lookups:
+                    other_item = self._item_lookups[compound_key]
+                    # Add source information for debugging
+                    other_item_with_source = other_item.copy()
+                    other_item_with_source['_source_table'] = source
+                    other_items.append(other_item_with_source)
+                    
+                    if preferred_items:  # Only log if we have a conflict
+                        logging.debug(f"ItemLookupService: ID conflict detected - {source} also has item {item_id}: '{other_item.get('name', 'Unknown')}'")
+            
+            # Return preferred items first, then others
+            result = preferred_items + other_items
+            
+            if len(result) > 1:
+                preferred_name = result[0].get('name', 'Unknown')
+                other_names = [item.get('name', 'Unknown') for item in result[1:]]
+                logging.info(f"ItemLookupService: Resolved ID {item_id} conflict - using '{preferred_name}' ({preferred_source}), ignoring {other_names}")
+            
+            return result
+            
+        except Exception as e:
+            logging.error(f"ItemLookupService: Error finding items with ID {item_id} (preferred {preferred_source}): {e}")
+            return []
 
     def determine_best_source_for_item(self, item_id: int, context_hint: Optional[str] = None) -> str:
         """

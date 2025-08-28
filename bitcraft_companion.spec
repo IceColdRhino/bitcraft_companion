@@ -30,10 +30,24 @@ a = Analysis(
     pathex=[str(project_dir / 'app')],  # Add app directory to Python path
     binaries=[],
     datas=[
-        # Include images folder for loading overlays and other UI assets
+        # UI assets
         ('app/ui/images', 'app/ui/images'),
-        # Include sounds folder for notification sound files
         ('app/ui/sounds', 'app/ui/sounds'),
+        # Templates
+        ('app/data/codex_templates', 'app/data/codex_templates'),
+        # Models and core data
+        ('app/models', 'app/models'),
+        ('app/core', 'app/core'),
+        # Services and UI components
+        ('app/services', 'app/services'),
+        ('app/ui/components', 'app/ui/components'),
+        ('app/ui/mixins', 'app/ui/mixins'),
+        ('app/ui/styles', 'app/ui/styles'),
+        ('app/ui/tabs', 'app/ui/tabs'),
+        ('app/ui/themes', 'app/ui/themes'),
+        # Main window and utils
+        ('app/ui/main_window.py', 'app/ui/main_window.py'),
+        ('app/core/utils', 'app/core/utils'),
     ],
     hiddenimports=[
         # CustomTkinter and its dependencies
