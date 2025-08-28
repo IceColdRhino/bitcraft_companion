@@ -931,7 +931,7 @@ class CompareJobsProcessor(BaseProcessor):
                     primary_in[0],source)
             except:
                 input_name = "Unknown Item"
-                logging.debug(f"Unresolved input variable in job_id: craft_{recipe["id"]}")
+                logging.debug(f"Unresolved input variable in job_id: craft_{recipe['id']}")
             job_name = job_name.replace("{1}",input_name)
             
 
@@ -943,7 +943,7 @@ class CompareJobsProcessor(BaseProcessor):
                     primary_out[0],source)
             except:
                 output_name = "Unknown Item"
-                logging.debug(f"Unresolved output variable in job_id: craft_{recipe["id"]}")
+                logging.debug(f"Unresolved output variable in job_id: craft_{recipe['id']}")
             job_name = job_name.replace("{0}",output_name)
 
         return job_name

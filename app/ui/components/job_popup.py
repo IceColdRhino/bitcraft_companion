@@ -77,7 +77,7 @@ class JobPopup(ctk.CTkToplevel):
     def _create_summary_section(self,parent,job_data):
         self.long_name = ctk.CTkLabel(
             parent,
-            text=f"{job_data["long_name"]}",
+            text=f"{job_data['long_name']}",
             font=ctk.CTkFont(size=14,weight="bold")
         )
         self.long_name.grid(row=0,column=0,rowspan=2,columnspan=5,sticky="nsew",padx=1,pady=1)
