@@ -495,7 +495,7 @@ class CompareJobsProcessor(BaseProcessor):
                 resource = self.item_lookup_service.lookup_item_by_id(recipe["resource_id"],"resource_desc")
 
                 job_name = resource["name"]
-                long_name = f"{recipe["verb_phrase"]} {job_name}"
+                long_name = f"{recipe['verb_phrase']} {job_name}"
 
                 # TODO: Better skill/level handling
                 # I would like something more resilient than the simple assumption that
