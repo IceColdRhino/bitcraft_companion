@@ -86,6 +86,9 @@ class CompareJobsProcessor(BaseProcessor):
                             # Parse the insert data
                             if isinstance(insert_str, str):
                                 insert_data = MarketOrderState.from_json_string(insert_str)
+                            else:
+                                logging.warning(f"Unexpected buy_order_state insert format: {insert_str}")
+                                continue
                             
                             # TODO: Maybe some more conditions/exceptions here?
                             self._buy_orders[insert_data.entity_id] = insert_data
@@ -130,6 +133,9 @@ class CompareJobsProcessor(BaseProcessor):
                             # Parse the insert data
                             if isinstance(insert_str, str):
                                 insert_data = MarketOrderState.from_json_string(insert_str)
+                            else:
+                                logging.warning(f"Unexpected sell_order_state insert format: {insert_str}")
+                                continue
 
                             # TODO: Maybe some more conditions/exceptions here?
                             self._sell_orders[insert_data.entity_id] = insert_data
@@ -163,7 +169,6 @@ class CompareJobsProcessor(BaseProcessor):
                         has_compare_jobs_changes = True
 
                 # Handle character_stats_state transactions
-                # TODO: This is broken, need to fix it
                 elif table_name == "character_stats_state":
                     if not hasattr(self, "_character_stats"):
                         self._character_stats = {}
@@ -172,11 +177,54 @@ class CompareJobsProcessor(BaseProcessor):
                     for insert_str in inserts:
                         data = json.loads(insert_str)
                         if data:
-                            self._character_stats = CharacterStatsState.from_dict(data).values_to_dict()
+                            self._character_stats = CharacterStatsState.from_array(data).values_to_dict()
                     if inserts or deletes:
                         has_compare_jobs_changes = True
 
-                # TODO: Handle toolbelt-specific inventory_state transactions
+                # Handle toolbelt-specific inventory_state transactions
+                elif table_name == "inventory_state":
+                    if not self.user_id:
+                        logging.warning("Unable to update equipped tools - No user id available.")
+                        continue
+                    
+                    if not hasattr(self,"_toolbelt_data"):
+                        self._toolbelt_data = {}
+
+                    # Process inserts
+                    # Similar to character stats
+                    # the entire toolbelt is contained in a single insert update
+                    # So, no need to process deletes, just do a full overwrite
+                    for insert_str in inserts:
+                        try:
+                            # Parse the insert data
+                            if isinstance(insert_str, str):
+                                insert_data = json.loads(insert_str)
+                            else:
+                                insert_data = insert_str
+
+                            if isinstance(insert_data,list) and len(insert_data)==6:
+                                inventory_state = InventoryState.from_array(insert_data)
+                            elif isinstance(insert_data,dict):
+                                inventory_state = InventoryState.from_dict(insert_data)
+                            else:
+                                logging.warning(f"Unexpected inventory_state insert format: {insert_data}")
+                                continue
+
+                            if inventory_state.owner_entity_id==self.user_id and inventory_state.inventory_index==1:
+                                tool_descs = self.reference_data.get("tool_desc", [])
+                                for equipped_tool in inventory_state.get_items():
+                                    tool_desc = next((tool for tool in tool_descs if tool["item_id"] == equipped_tool["item_id"]), None)
+                                    if tool_desc:
+                                        self._toolbelt_data[tool_desc["tool_type"]] = {
+                                            "level": tool_desc.get("level",1),
+                                            "power": tool_desc.get("power",1),
+                                        }
+
+                        except Exception as e:
+                            logging.error(f"Error processing toolbelt delete: {e}")
+
+                    if inserts or deletes:
+                        has_compare_jobs_changes = True
 
                 # For other table types, do full refresh if we have changes
                 elif inserts or deletes:
