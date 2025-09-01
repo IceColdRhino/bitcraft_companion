@@ -199,7 +199,7 @@ class InventoryProcessor(BaseProcessor):
                 try:
                     # Create InventoryState dataclass instance
                     inventory_state = InventoryState.from_dict(row)
-                    if inventory_state.owner_entity_id:
+                    if inventory_state.owner_entity_id and inventory_state.inventory_index!=1:
                         if inventory_state.owner_entity_id not in self._inventory_data:
                             self._inventory_data[inventory_state.owner_entity_id] = []
 
